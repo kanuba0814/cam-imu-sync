@@ -1,0 +1,73 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1234567..abcdefg 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,7 +1,7 @@
+ cmake_minimum_required(VERSION 2.8)
+ project(ORB_SLAM3)
+
+-IF(NOT CMAKE_BUILD_TYPE)
++if(NOT CMAKE_BUILD_TYPE)
+   SET(CMAKE_BUILD_TYPE Release)
+ ENDIF()
+
+@@ -10,8 +10,8 @@ MESSAGE("Build type: " ${CMAKE_BUILD_TYPE})
+ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}  -Wall   -O3")
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall   -O3")
+ set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=native")
+-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native")
++set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+
+-# Check C++11 or C++0x support
+-set(CMAKE_CXX_STANDARD 11)
++# Use C++17
++set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+diff --git a/include/CameraModels/KannalaBrandt8.h b/include/CameraModels/KannalaBrandt8.h
+index 1234567..abcdefg 100644
+--- a/include/CameraModels/KannalaBrandt8.h
++++ b/include/CameraModels/KannalaBrandt8.h
+@@ -25,6 +25,7 @@
+ #include <opencv2/core/core.hpp>
+ #include <opencv2/imgproc/imgproc.hpp>
+ #include <opencv2/features2d/features2d.hpp>
++#include <opencv2/core/types.hpp>
+
+ #include "GeometricCamera.h"
+
+diff --git a/src/LoopClosing.cc b/src/LoopClosing.cc
+index 1234567..abcdefg 100644
+--- a/src/LoopClosing.cc
++++ b/src/LoopClosing.cc
+@@ -25,6 +25,7 @@
+ #include "Converter.h"
+ #include "Optimizer.h"
+ #include "ORBmatcher.h"
++#include <mutex>
+
+ namespace ORB_SLAM3
+ {
+diff --git a/Thirdparty/DBoW2/CMakeLists.txt b/Thirdparty/DBoW2/CMakeLists.txt
+index 1234567..abcdefg 100644
+--- a/Thirdparty/DBoW2/CMakeLists.txt
++++ b/Thirdparty/DBoW2/CMakeLists.txt
+@@ -1,6 +1,7 @@
+ cmake_minimum_required(VERSION 2.8)
+ project(DBoW2)
+
++set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}  -Wall  -O3")
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall   -O3")
+ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+diff --git a/Thirdparty/g2o/CMakeLists.txt b/Thirdparty/g2o/CMakeLists.txt
+index 1234567..abcdefg 100644
+--- a/Thirdparty/g2o/CMakeLists.txt
++++ b/Thirdparty/g2o/CMakeLists.txt
+@@ -1,6 +1,7 @@
+ cmake_minimum_required(VERSION 2.8)
+ project(g2o)
+
++set(CMAKE_CXX_STANDARD 17)
+ SET(g2o_C_FLAGS "${g2o_C_FLAGS} -Wall -W")
+ SET(g2o_CXX_FLAGS "${g2o_CXX_FLAGS} -Wall -W")
+ set(CMAKE_POSITION_INDEPENDENT_CODE ON)

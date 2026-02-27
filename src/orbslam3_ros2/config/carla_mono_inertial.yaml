@@ -1,0 +1,80 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters (CARLA CAM_FRONT: 1600x900, FOV=70deg, bgra8)
+#--------------------------------------------------------------------------------------------
+Camera.type: "PinHole"
+
+# fx = fy = width / (2 * tan(fov/2)) = 1600 / (2 * tan(35°)) = 1600 / 1.4006 = 1142.5056
+Camera.fx: 1142.5056
+Camera.fy: 1142.5056
+Camera.cx: 800.0
+Camera.cy: 450.0
+
+# CARLA has zero distortion
+Camera.k1: 0.0
+Camera.k2: 0.0
+Camera.p1: 0.0
+Camera.p2: 0.0
+
+Camera.width: 1600
+Camera.height: 900
+Camera.fps: 11
+Camera.RGB: 1
+
+#--------------------------------------------------------------------------------------------
+# IMU-Camera Extrinsic: T_bc (body/IMU frame → camera optical frame)
+#
+# CARLA sensor positions (from sensor_kit_calibration.yaml):
+#   IMU (tamagawa/imu_link): at base_link origin (x=0.025, y=0, z=0) approx
+#   CAM_FRONT (camera_link): x=2.225, y=0, z=1.6
+#   Camera optical frame: rotate from camera_link (x-right, y-down, z-forward in optical)
+#
+# base_link frame: x-forward, y-left, z-up
+# camera_optical frame: x-right, y-down, z-forward
+#
+# Translation from IMU to camera: dx=2.2, dy=0, dz=1.6 (in base_link frame)
+# In camera optical frame: right=0, down=-1.6, forward=2.2
+#
+# Rotation from base_link to camera optical:
+#   base_link (x-fwd, y-left, z-up) → optical (x-right, y-down, z-fwd)
+#   R = [0, -1, 0;   (x_optical = -y_base = right)
+#        0,  0, -1;   (y_optical = -z_base = down)
+#        1,  0, 0]    (z_optical = x_base = forward)
+#
+# T_bc = [R | R*t_base_cam]
+# t_base_cam = [2.2, 0, 1.6]^T
+# R * t_base_cam = [0,-1,0; 0,0,-1; 1,0,0] * [2.2, 0, 1.6]^T = [0, -1.6, 2.2]^T
+#--------------------------------------------------------------------------------------------
+Tbc: !!opencv-matrix
+  rows: 4
+  cols: 4
+  dt: f
+  data: [ 0.0, -1.0,  0.0,  0.0,
+          0.0,  0.0, -1.0, -1.6,
+          1.0,  0.0,  0.0,  2.2,
+          0.0,  0.0,  0.0,  1.0]
+
+#--------------------------------------------------------------------------------------------
+# IMU Noise Model
+# CARLA IMU has configurable noise; these are reasonable defaults for simulation
+#--------------------------------------------------------------------------------------------
+IMU.NoiseGyro: 1.0e-3        # rad/s/sqrt(Hz)
+IMU.NoiseAcc: 1.0e-2         # m/s^2/sqrt(Hz)
+IMU.GyroWalk: 1.0e-5         # rad/s^2/sqrt(Hz)
+IMU.AccWalk: 1.0e-4          # m/s^3/sqrt(Hz)
+IMU.Frequency: 50            # Hz
+
+#--------------------------------------------------------------------------------------------
+# ORB Extractor Parameters
+#--------------------------------------------------------------------------------------------
+ORBextractor.nFeatures: 1200
+ORBextractor.scaleFactor: 1.2
+ORBextractor.nLevels: 8
+ORBextractor.iniThFAST: 20
+ORBextractor.minThFAST: 7
+
+#--------------------------------------------------------------------------------------------
+# Viewer (disabled for headless operation)
+#--------------------------------------------------------------------------------------------
+Viewer.UseViewer: 0
