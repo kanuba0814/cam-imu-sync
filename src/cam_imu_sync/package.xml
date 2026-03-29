@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd"
+            schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>cam_imu_sync</name>
+  <version>0.1.0</version>
+  <description>
+    Camera-IMU time-offset synchronization node.
+    Buffers raw camera and IMU streams, applies a Kalibr-calibrated
+    time offset, and republishes them on aligned output topics.
+  </description>
+  <maintainer email="gxxl@todo.todo">gxxl</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>builtin_interfaces</depend>
+
+  <exec_depend>usb_cam</exec_depend>
+  <exec_depend>yesense_std_ros2</exec_depend>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,23 @@
+# Colcon build artifacts
+build/
+install/
+log/
+
+# IDE / editor
+.cache/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+.eggs/
+
+# OS
+.DS_Store
+Thumbs.db
