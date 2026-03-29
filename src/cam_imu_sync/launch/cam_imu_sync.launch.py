@@ -3,19 +3,23 @@
 Starts three components:
   1. usb_cam          – USB camera driver  → /image_raw
   2. yesense_std_ros2 – Yesense H30 IMU   → /imu/data_raw
-  3. cam_imu_sync     – delay-sync node    → /sync/image_raw, /sync/imu
+  3. cam_imu_sync     – sync node          → /sync/image_raw, /sync/imu
 
 Usage
 -----
     ros2 launch cam_imu_sync cam_imu_sync.launch.py
 
     # with camera calibration file:
-    ros2 launch cam_imu_sync cam_imu_sync.launch.py \
+    ros2 launch cam_imu_sync cam_imu_sync.launch.py \\
         camera_info_url:=file:///path/to/camera_info.yaml
 
     # override time offset:
-    ros2 launch cam_imu_sync cam_imu_sync.launch.py \
+    ros2 launch cam_imu_sync cam_imu_sync.launch.py \\
         cam_imu_time_offset:=0.30
+
+    # disable interpolation (fallback to simple forwarding):
+    ros2 launch cam_imu_sync cam_imu_sync.launch.py \\
+        enable_interpolation:=false
 """
 
 from launch import LaunchDescription
@@ -40,6 +44,9 @@ def generate_launch_description():
             'camera_info_url', default_value='',
             description='Camera calibration YAML URL '
                         '(e.g. file:///path/to/camera_info.yaml)'),
+        DeclareLaunchArgument(
+            'enable_interpolation', default_value='true',
+            description='Enable linear interpolation at frame boundaries'),
 
         # ── USB Camera ────────────────────────────────────────────────
         # publishes: /image_raw  (sensor_msgs/Image, RELIABLE)
@@ -84,6 +91,8 @@ def generate_launch_description():
                 'imu_topic_in':    '/imu/data_raw',
                 'image_topic_out': '/sync/image_raw',
                 'imu_topic_out':   '/sync/imu',
+                'enable_interpolation':
+                    LaunchConfiguration('enable_interpolation'),
             }],
         ),
     ])
