@@ -18,6 +18,7 @@
 
   <exec_depend>usb_cam</exec_depend>
   <exec_depend>yesense_std_ros2</exec_depend>
+  <exec_depend>yesense_interface</exec_depend>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
