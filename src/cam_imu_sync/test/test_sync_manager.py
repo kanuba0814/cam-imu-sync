@@ -21,6 +21,7 @@ from typing import Any
 
 import pytest
 
+from cam_imu_sync.fixed_rate_resampler import FixedRateImuResampler
 from cam_imu_sync.models import SyncConfig, SyncState, SyncStats
 from cam_imu_sync.sync_manager import SyncManager, SyncBatch
 
@@ -107,6 +108,7 @@ def _make_imu_factory(sec, nanosec, frame_id, lin_acc, ang_vel) -> _FakeImu:
 
 # Base steady time for tests: 100 seconds in nanoseconds
 _STEADY_BASE_NS = 100_000_000_000
+_CAM_PERIOD_NS = 33_333_333
 
 
 def _default_cfg(**overrides) -> SyncConfig:
@@ -130,6 +132,8 @@ def _default_cfg(**overrides) -> SyncConfig:
         sync_wait_imu_ready_min_samples=5,  # lower for tests
         sync_wait_imu_ready_min_span_ms=20.0,  # lower for tests
         sync_wait_imu_ready_max_std_ms=2.0,  # relaxed for tests
+        min_stable_cam_frames=5,  # shorter WAIT_CAM_STABLE in tests
+        cam_stable_max_std_ms=2.0,
         first_sync_safety_margin_sec=0.005,
         first_sync_timeout_sec=2.0,
         first_sync_drop_limit=60,
@@ -167,13 +171,44 @@ def _feed_imu_200hz(mgr, start_t, count, mono_base=100.0,
 
 
 def _make_ready(mgr, mono=100.0):
-    """Feed enough IMU to satisfy readiness criteria and transition
-    the manager to WAIT_FIRST_SYNC state."""
+    """Drive the state machine to WAIT_FIRST_SYNC from cold start."""
     # Feed 50 IMU at 200 Hz to ensure readiness
     _feed_imu_200hz(mgr, 1.0, 50, mono_base=mono)
-    # Trigger state check
     mgr.try_sync(now_mono=mono)
-    # Should now be in WAIT_FIRST_SYNC
+    assert mgr.state == SyncState.WAIT_CAM_STABLE
+
+    _advance_wait_cam_stable(mgr, mono)
+
+    # Should now be in WAIT_FIRST_SYNC.
+    return mgr
+
+
+def _advance_wait_cam_stable(mgr, mono=100.0):
+    """Drive WAIT_CAM_STABLE to WAIT_FIRST_SYNC with stable camera input."""
+    mgr._cam_period_ring.clear()
+    mgr._last_cam_steady_for_period = 0
+
+    # Feed stable camera frames and let WAIT_CAM_STABLE drain them.
+    for i in range(mgr.cfg.min_stable_cam_frames + 1):
+        t = 1.0 + i * (_CAM_PERIOD_NS / 1e9)
+        steady = _STEADY_BASE_NS + i * _CAM_PERIOD_NS
+        mgr.on_image(t, _make_image_at(t), now_mono=mono + 0.001 * i,
+                     steady_ns=steady)
+        mgr.try_sync(now_mono=mono + 0.001 * i)
+        if mgr.state == SyncState.WAIT_FIRST_SYNC:
+            break
+
+    # One last tick if the transition happened after the last enqueue.
+    if mgr.state == SyncState.WAIT_CAM_STABLE:
+        mgr.try_sync(now_mono=mono + 0.050)
+
+    # Warm-up frames are only for camera stability; drop them before the
+    # actual sync assertions so tests start with a clean image queue.
+    with mgr._img_lock:
+        mgr._img_queue.clear()
+        mgr._last_img_t = 0.0
+    mgr._first_sync_wait_start = mono
+
     return mgr
 
 
@@ -231,16 +266,19 @@ class TestStateMachine:
         assert mgr.state == SyncState.WAIT_IMU_READY
 
     def test_imu_ready_transitions_to_wait_first_sync(self):
-        """With enough IMU samples, transitions to WAIT_FIRST_SYNC."""
+        """With enough IMU samples, enters WAIT_CAM_STABLE first."""
         mgr = _make_manager()
         mono = 100.0
 
         _feed_imu_200hz(mgr, 1.0, 50, mono_base=mono)
         mgr.try_sync(now_mono=mono)
+        assert mgr.state == SyncState.WAIT_CAM_STABLE
+
+        _advance_wait_cam_stable(mgr, mono)
         assert mgr.state == SyncState.WAIT_FIRST_SYNC
 
     def test_external_ready_transitions_to_wait_first_sync(self):
-        """External pipeline_ready=True overrides local estimation."""
+        """External pipeline_ready=True still enters WAIT_CAM_STABLE first."""
         mgr = _make_manager(sync_wait_imu_ready_min_samples=1000)
         mono = 100.0
 
@@ -250,6 +288,9 @@ class TestStateMachine:
         # But set external ready
         mgr.set_external_imu_ready(True)
         mgr.try_sync(now_mono=mono)
+        assert mgr.state == SyncState.WAIT_CAM_STABLE
+
+        _advance_wait_cam_stable(mgr, mono)
         assert mgr.state == SyncState.WAIT_FIRST_SYNC
 
     def test_first_sync_transitions_to_ready(self):
@@ -501,6 +542,8 @@ class TestRearm:
         _feed_imu_200hz(mgr, 2.0, 50, mono_base=mono,
                          steady_ns_base=_STEADY_BASE_NS + 1_000_000_000)
         mgr.try_sync(now_mono=mono)
+        assert mgr.state == SyncState.WAIT_CAM_STABLE
+        _advance_wait_cam_stable(mgr, mono)
         assert mgr.state == SyncState.WAIT_FIRST_SYNC
 
         # Feed more IMU and image
@@ -845,8 +888,11 @@ class TestWithOffset:
         # IMU at 200 Hz with steady_ns covering enough range
         _feed_imu_200hz(mgr, 1.0, 200, mono_base=mono)
 
-        # Wait for IMU ready
+        # Walk startup states before first sync.
         mgr.try_sync(now_mono=mono)
+        assert mgr.state == SyncState.WAIT_CAM_STABLE
+        _advance_wait_cam_stable(mgr, mono)
+        assert mgr.state == SyncState.WAIT_FIRST_SYNC
 
         # Camera at steady=100.000s → target_steady=100.050s
         cam_steady_ns = _STEADY_BASE_NS  # 100.0s
@@ -890,7 +936,10 @@ class TestLogDraining:
 
         _feed_imu_200hz(mgr, 1.0, 50, mono_base=mono)
         mgr.try_sync(now_mono=mono)
+        logs = mgr.drain_logs()
+        assert any('WAIT_CAM_STABLE' in l.message for l in logs)
 
+        _advance_wait_cam_stable(mgr, mono)
         logs = mgr.drain_logs()
         assert any('WAIT_FIRST_SYNC' in l.message for l in logs)
 
@@ -922,6 +971,43 @@ class TestHealthMonitoring:
             # If no batch, it means there was a gap — that's also valid
             assert mgr.stats.sync_fail_count > 0 or \
                    mgr.stats.dropped_frames > 0
+
+
+class TestResamplerSeparation:
+    """The fixed-rate resampler must keep its own source buffer."""
+
+    def test_resampler_survives_sync_manager_batch_consumption(self):
+        mgr = _make_manager(steady_cam_to_imu_offset_sec=0.0)
+        resampler = FixedRateImuResampler(
+            rate_hz=100.0,
+            latency_ms=20.0,
+            max_gap_ms=15.0,
+        )
+        mono = 100.0
+
+        _make_fully_ready(mgr, mono)
+
+        for i in range(20):
+            t = 1.350 + i * 0.005
+            steady_ns = _STEADY_BASE_NS + 350_000_000 + i * 5_000_000
+            msg = _make_imu_at(t, ax=t)
+            mgr.on_imu(t, msg, now_mono=mono, steady_ns=steady_ns)
+            resampler.push_sample(
+                steady_ns=steady_ns,
+                frame_id=msg.header.frame_id,
+                lin_acc=(t, 0.0, 9.81),
+                ang_vel=(t, 0.0, 0.0),
+            )
+
+        cam_steady_ns = _STEADY_BASE_NS + 360_000_000
+        mgr.on_image(1.360, _make_image_at(1.360), now_mono=mono,
+                     steady_ns=cam_steady_ns)
+        batch = mgr.try_sync(now_mono=mono)
+        assert batch is not None
+
+        outcome = resampler.poll()
+        assert outcome.kind == 'publish'
+        assert outcome.point is not None
 
 
 class TestFirstSyncRearm:

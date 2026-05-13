@@ -1,24 +1,15 @@
 #!/usr/bin/env python3
 # Copyright 2026 gxxl. MIT License.
-"""Structured event logging for cam_imu_sync diagnostics.
+"""Structured terminal diagnostics for cam_imu_sync.
 
-Produces per-run directories containing::
-
-    {log_dir}/{run_id}/
-        meta.txt     – startup configuration snapshot
-        events.csv   – timestamped CAM_RX / IMU_RX / SYNC_OUT events
-        summary.txt  – end-of-run aggregate statistics
-
-All timestamps use ``time.monotonic_ns()`` (nanosecond monotonic clock),
-matching C++ ``std::chrono::steady_clock``.
+All records go through the ROS 2 logger.  ROS 2 launch captures the same output
+in its normal log directory, so this module intentionally does not create
+per-run directories, CSV files, or metadata files.
 """
 
 from __future__ import annotations
 
-import csv
 import math
-import os
-import platform
 import threading
 from typing import Optional
 
@@ -27,7 +18,7 @@ from typing import Optional
 # Wide format — unused fields across event types are left blank.
 
 CSV_COLUMNS = [
-    'event', 'run_id', 'steady_ns',
+    'event', 'steady_ns',
     # camera
     'cam_frame_id', 'cam_header_ns', 'cam_steady_ns',
     # imu
@@ -52,6 +43,29 @@ CSV_COLUMNS = [
     'unified_stamp_ns',
     'ros_minus_steady_offset_ns',
     'extra',
+]
+
+SYNC_FRAME_COLUMNS = [
+    'steady_ns', 'sync_frame_id', 'cam_frame_id',
+    'cam_header_ns', 'cam_steady_ns', 'target_align_ns',
+    'target_align_steady_ns', 'applied_offset_ns',
+    'applied_steady_offset_ns', 'imu_first_id', 'imu_last_id',
+    'imu_count', 'imu_first_steady_ns', 'imu_last_steady_ns',
+    'interp_used', 'cam_minus_imu_last_ns',
+]
+
+RESAMPLED_IMU_COLUMNS = [
+    'steady_ns', 'target_steady_ns', 'header_stamp_ns',
+    'source_kind', 'before_steady_ns', 'after_steady_ns', 'alpha',
+    'gap_ns', 'ax', 'ay', 'az', 'gx', 'gy', 'gz',
+]
+
+SUMMARY_COLUMNS = [
+    'steady_ns', 'state', 'synced_frames', 'dropped_frames',
+    'interp_count', 'sync_batch_imu', 'batch_imu_pub',
+    'resampled_imu_pub', 'resample_gap_skip', 'observed_sync_imu_rate_hz',
+    'imu_mean_period_ms', 'imu_period_std_ms', 'cam_mean_period_ms',
+    'sync_fails', 'resets',
 ]
 
 
@@ -83,49 +97,42 @@ class OnlineStats:
         return math.sqrt(self._m2 / (self.n - 1)) if self.n >= 2 else 0.0
 
 
-# ── CSV event writer ─────────────────────────────────────────────────
+# ── ROS logger event writer ───────────────────────────────────────────
 
 class DiagnosticsWriter:
-    """Thread-safe CSV event logger and per-run summary emitter."""
+    """Thread-safe structured ROS logger for debug events."""
 
     def __init__(
         self,
-        run_id: str,
-        log_dir: str,
+        logger,
         run_meta: Optional[dict] = None,
     ) -> None:
-        self.run_id = run_id
         self._lock = threading.Lock()
-
-        self.run_dir = os.path.join(log_dir, run_id)
-        os.makedirs(self.run_dir, exist_ok=True)
-
-        # ── meta.txt ──
-        if run_meta:
-            with open(os.path.join(self.run_dir, 'meta.txt'), 'w') as f:
-                for k, v in run_meta.items():
-                    f.write(f'{k}={v}\n')
-
-        # ── events.csv (line-buffered for crash safety) ──
-        self._csv_path = os.path.join(self.run_dir, 'events.csv')
-        self._csv_file = open(self._csv_path, 'w', newline='',
-                              buffering=1)
-        self._csv_writer = csv.DictWriter(
-            self._csv_file, fieldnames=CSV_COLUMNS,
-            extrasaction='ignore')
-        self._csv_writer.writeheader()
+        self._logger = logger
         self._closed = False
+        if run_meta:
+            self._emit('sync_meta', run_meta)
 
     # ── low-level writer ─────────────────────────────────────────────
+
+    def _emit(self, prefix: str, row: dict) -> None:
+        msg = ' '.join(f'{k}={v}' for k, v in row.items() if v != '')
+        with self._lock:
+            if not self._closed:
+                self._logger.info(f'[{prefix}] {msg}')
 
     def _row(self, event: str, **kw) -> None:
         row = {c: '' for c in CSV_COLUMNS}
         row['event'] = event
-        row['run_id'] = self.run_id
         row.update(kw)
-        with self._lock:
-            if not self._closed:
-                self._csv_writer.writerow(row)
+        self._emit(f'sync_{event.lower()}', row)
+
+    def _structured_row(
+        self, prefix: str, columns: list[str], **kw,
+    ) -> None:
+        row = {c: '' for c in columns}
+        row.update(kw)
+        self._emit(prefix, row)
 
     # ── public event helpers ─────────────────────────────────────────
 
@@ -207,6 +214,55 @@ class DiagnosticsWriter:
             interp_used=1 if interp_used else 0,
             cam_minus_imu_last_ns=cam_minus_imu_last_ns,
         )
+        self._structured_row(
+            'sync_frame',
+            SYNC_FRAME_COLUMNS,
+            steady_ns=publish_steady_ns,
+            sync_frame_id=sync_frame_id,
+            cam_frame_id=cam_frame_id,
+            cam_header_ns=cam_header_ns,
+            cam_steady_ns=cam_steady_ns,
+            target_align_ns=target_align_ns,
+            target_align_steady_ns=target_align_steady_ns,
+            applied_offset_ns=applied_offset_ns,
+            applied_steady_offset_ns=applied_steady_offset_ns,
+            imu_first_id=imu_first_id,
+            imu_last_id=imu_last_id,
+            imu_count=imu_count,
+            imu_first_steady_ns=imu_first_steady_ns,
+            imu_last_steady_ns=imu_last_steady_ns,
+            interp_used=1 if interp_used else 0,
+            cam_minus_imu_last_ns=cam_minus_imu_last_ns,
+        )
+
+    def resampled_imu(
+        self, *,
+        steady_ns: int,
+        target_steady_ns: int,
+        header_stamp_ns: int,
+        source_kind: str,
+        before_steady_ns: int,
+        after_steady_ns: int,
+        alpha: float,
+        gap_ns: int,
+        ax: float, ay: float, az: float,
+        gx: float, gy: float, gz: float,
+    ) -> None:
+        """Record one fixed-rate /sync/imu output point."""
+        self._structured_row(
+            'sync_resampled_imu',
+            RESAMPLED_IMU_COLUMNS,
+            steady_ns=steady_ns,
+            target_steady_ns=target_steady_ns,
+            header_stamp_ns=header_stamp_ns,
+            source_kind=source_kind,
+            before_steady_ns=before_steady_ns,
+            after_steady_ns=after_steady_ns,
+            alpha=f'{alpha:.9f}',
+            gap_ns=gap_ns,
+            ax=f'{ax:.6f}', ay=f'{ay:.6f}', az=f'{az:.6f}',
+            gx=f'{gx:.6f}', gy=f'{gy:.6f}', gz=f'{gz:.6f}',
+        )
 
     # ── NEW: state machine events ────────────────────────────────────
 
@@ -232,26 +288,63 @@ class DiagnosticsWriter:
     # ── summary ──────────────────────────────────────────────────────
 
     def write_summary(self, summary: dict) -> None:
-        """Write summary.txt at end of run."""
-        path = os.path.join(self.run_dir, 'summary.txt')
-        with open(path, 'w') as f:
-            for k, v in summary.items():
-                f.write(f'{k}={v}\n')
+        """Record final summary at end of run."""
+        self._emit('sync_run_summary', summary)
+
+    def summary_1hz(self, **kw) -> None:
+        """Record one periodic debug summary row."""
+        self._structured_row('sync_summary', SUMMARY_COLUMNS, **kw)
 
     # ── lifecycle ────────────────────────────────────────────────────
 
     def close(self) -> None:
         with self._lock:
-            if not self._closed:
-                self._csv_file.flush()
-                self._csv_file.close()
-                self._closed = True
+            self._closed = True
+
+
+class NullDiagnosticsWriter:
+    """No-op diagnostics writer for debug_enable=false."""
+
+    def run_start(self, *args, **kwargs) -> None:
+        pass
+
+    def first_event(self, *args, **kwargs) -> None:
+        pass
+
+    def cam_rx(self, *args, **kwargs) -> None:
+        pass
+
+    def imu_rx(self, *args, **kwargs) -> None:
+        pass
+
+    def sync_out(self, *args, **kwargs) -> None:
+        pass
+
+    def resampled_imu(self, *args, **kwargs) -> None:
+        pass
+
+    def state_change(self, *args, **kwargs) -> None:
+        pass
+
+    def sync_fail(self, *args, **kwargs) -> None:
+        pass
+
+    def rearm_event(self, *args, **kwargs) -> None:
+        pass
+
+    def write_summary(self, *args, **kwargs) -> None:
+        pass
+
+    def summary_1hz(self, *args, **kwargs) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
 
 
 # ── utility: build run metadata dict ─────────────────────────────────
 
 def build_run_meta(
-    run_id: str,
     cfg,
     *,
     camera_fps: int = 30,
@@ -260,10 +353,6 @@ def build_run_meta(
 ) -> dict:
     """Assemble the meta.txt content from config and system info."""
     return {
-        'run_id': run_id,
-        'machine': platform.node(),
-        'os': platform.platform(),
-        'ros2': os.getenv('ROS_DISTRO', 'unknown'),
         'camera_driver': 'usb_cam',
         'imu_driver': 'yesense_std_ros2',
         'camera_fps': str(camera_fps),

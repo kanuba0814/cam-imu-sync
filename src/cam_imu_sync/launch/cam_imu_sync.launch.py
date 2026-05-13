@@ -2,8 +2,10 @@
 
 Starts three components:
   1. usb_cam          – USB camera driver  → /image_raw
-  2. yesense_std_ros2 – Yesense H30 IMU   → /imu/data_raw
-  3. cam_imu_sync     – sync node          → /sync/image_raw, /sync/imu
+  2. yesense_std_ros2 – Yesense H30 IMU   → /imu/data_raw, /imu/raw_hw
+  3. cam_imu_sync     – sync node          → /sync/image_raw,
+                                              /sync/imu,
+                                              /sync/imu_batch
 
 Usage
 -----
@@ -20,6 +22,11 @@ Usage
     # disable interpolation (fallback to simple forwarding):
     ros2 launch cam_imu_sync cam_imu_sync.launch.py \\
         enable_interpolation:=false
+
+    # fixed-rate IMU output:
+    ros2 launch cam_imu_sync cam_imu_sync.launch.py \\
+        resampled_imu_rate_hz:=100.0 \\
+        publish_batch_imu:=false
 
     # tune sync-wait timeout:
     ros2 launch cam_imu_sync cam_imu_sync.launch.py \\
@@ -53,6 +60,28 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'enable_interpolation', default_value='true',
             description='Enable linear interpolation at frame boundaries'),
+        DeclareLaunchArgument(
+            'enable_resampled_imu', default_value='true',
+            description='Enable fixed-rate resampled IMU output'),
+        DeclareLaunchArgument(
+            'resampled_imu_topic', default_value='/sync/imu',
+            description='Fixed-rate IMU output topic'),
+        DeclareLaunchArgument(
+            'resampled_imu_rate_hz', default_value='100.0',
+            description='Fixed output IMU rate, e.g. 100.0 or 150.0'),
+        DeclareLaunchArgument(
+            'resampled_imu_latency_ms', default_value='20.0',
+            description='Resampler latency to keep future samples '
+                        'available for interpolation'),
+        DeclareLaunchArgument(
+            'resampled_imu_max_gap_ms', default_value='15.0',
+            description='Maximum raw-IMU bracket gap for resampling'),
+        DeclareLaunchArgument(
+            'publish_batch_imu', default_value='false',
+            description='Publish legacy camera-window IMU batch output'),
+        DeclareLaunchArgument(
+            'batch_imu_topic', default_value='/sync/imu_batch',
+            description='Legacy burst-style IMU batch topic'),
         # §12 / §13 arguments
         DeclareLaunchArgument(
             'max_sync_wait_ms', default_value='100.0',
@@ -69,12 +98,11 @@ def generate_launch_description():
             'warn_on_queue_backlog', default_value='true',
             description='§13.5 – warn when image queue exceeds 70%'),
         DeclareLaunchArgument(
-            'run_id', default_value='',
-            description='Diagnostics run ID (auto-generated if empty)'),
+            'debug_enable', default_value='false',
+            description='Enable structured terminal diagnostics output'),
         DeclareLaunchArgument(
-            'log_dir',
-            default_value='/home/gxxl/slam_ws_v2/extra_ws/logs/cam_imu_sync',
-            description='Base directory for per-run diagnostics output'),
+            'debug_expected_imu_rate_hz', default_value='0.0',
+            description='Expected IMU rate for debug consistency checks'),
 
         # ── NEW: state-machine arguments ──────────────────────────────
         DeclareLaunchArgument(
@@ -165,11 +193,16 @@ def generate_launch_description():
                 PathJoinSubstitution([
                     FindPackageShare('yesense_std_ros2'),
                     'launch', 'yesense_node.launch.py'])),
+            launch_arguments={
+                'debug_enable': LaunchConfiguration('debug_enable'),
+                'debug_expected_imu_rate_hz':
+                    LaunchConfiguration('debug_expected_imu_rate_hz'),
+            }.items(),
         ),
 
         # ── Sync Node ────────────────────────────────────────────────
         # subscribes: /image_raw, /imu/data_raw, /imu/pipeline_ready
-        # publishes:  /sync/image_raw, /sync/imu
+        # publishes:  /sync/image_raw, /sync/imu, /sync/imu_batch
         Node(
             package='cam_imu_sync',
             executable='sync_node',
@@ -182,6 +215,20 @@ def generate_launch_description():
                 'imu_topic_in':    '/imu/data_raw',
                 'image_topic_out': '/sync/image_raw',
                 'imu_topic_out':   '/sync/imu',
+                'enable_resampled_imu':
+                    LaunchConfiguration('enable_resampled_imu'),
+                'resampled_imu_topic':
+                    LaunchConfiguration('resampled_imu_topic'),
+                'resampled_imu_rate_hz':
+                    LaunchConfiguration('resampled_imu_rate_hz'),
+                'resampled_imu_latency_ms':
+                    LaunchConfiguration('resampled_imu_latency_ms'),
+                'resampled_imu_max_gap_ms':
+                    LaunchConfiguration('resampled_imu_max_gap_ms'),
+                'publish_batch_imu':
+                    LaunchConfiguration('publish_batch_imu'),
+                'batch_imu_topic':
+                    LaunchConfiguration('batch_imu_topic'),
                 'enable_interpolation':
                     LaunchConfiguration('enable_interpolation'),
                 'max_sync_wait_ms':
@@ -192,10 +239,10 @@ def generate_launch_description():
                     LaunchConfiguration('drop_frame_on_missing_imu'),
                 'warn_on_queue_backlog':
                     LaunchConfiguration('warn_on_queue_backlog'),
-                'run_id':
-                    LaunchConfiguration('run_id'),
-                'log_dir':
-                    LaunchConfiguration('log_dir'),
+                'debug_enable':
+                    LaunchConfiguration('debug_enable'),
+                'debug_expected_imu_rate_hz':
+                    LaunchConfiguration('debug_expected_imu_rate_hz'),
                 # NEW state-machine params
                 'camera_startup_drop_sec':
                     LaunchConfiguration('camera_startup_drop_sec'),
