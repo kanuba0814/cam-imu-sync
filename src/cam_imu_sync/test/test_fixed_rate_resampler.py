@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import threading
+import time
+
 import pytest
 
 from cam_imu_sync.fixed_rate_resampler import FixedRateImuResampler
@@ -127,3 +130,45 @@ class TestFixedRateImuResampler:
         assert published.kind == 'publish'
         assert published.point is not None
         assert published.point.target_steady_ns == 30_000_000
+
+    def test_push_and_poll_are_thread_safe(self):
+        resampler = FixedRateImuResampler(
+            rate_hz=100.0,
+            latency_ms=10.0,
+            max_gap_ms=15.0,
+        )
+        errors: list[BaseException] = []
+
+        def producer():
+            try:
+                for i in range(1, 300):
+                    resampler.push_sample(
+                        steady_ns=i * 5_000_000,
+                        frame_id='imu_link',
+                        lin_acc=(float(i), 0.0, 9.81),
+                        ang_vel=(float(i), 0.0, 0.0),
+                    )
+                    if i % 7 == 0:
+                        time.sleep(0)
+            except BaseException as exc:
+                errors.append(exc)
+
+        def consumer():
+            try:
+                for _ in range(400):
+                    resampler.poll()
+                    time.sleep(0)
+            except BaseException as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=producer),
+            threading.Thread(target=consumer),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert errors == []
+        assert resampler.buffer_depth >= 2

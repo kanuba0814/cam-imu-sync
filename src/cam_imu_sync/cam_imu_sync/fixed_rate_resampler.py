@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from fractions import Fraction
+import threading
 
 
 @dataclass(frozen=True)
@@ -86,11 +87,13 @@ class FixedRateImuResampler:
 
         self._buf: deque[RawImuSample] = deque()
         self._next_tick: int | None = None
+        self._lock = threading.Lock()
 
     @property
     def buffer_depth(self) -> int:
         """Current raw-buffer depth."""
-        return len(self._buf)
+        with self._lock:
+            return len(self._buf)
 
     def push_sample(
         self,
@@ -101,29 +104,35 @@ class FixedRateImuResampler:
         ang_vel: tuple[float, float, float],
     ) -> bool:
         """Append a new raw sample if it is strictly monotonic."""
-        if steady_ns <= 0:
-            return False
+        with self._lock:
+            if steady_ns <= 0:
+                return False
 
-        if self._buf and steady_ns <= self._buf[-1].steady_ns:
-            return False
+            if self._buf and steady_ns <= self._buf[-1].steady_ns:
+                return False
 
-        self._buf.append(
-            RawImuSample(
-                steady_ns=steady_ns,
-                frame_id=frame_id,
-                lin_acc=lin_acc,
-                ang_vel=ang_vel,
+            self._buf.append(
+                RawImuSample(
+                    steady_ns=steady_ns,
+                    frame_id=frame_id,
+                    lin_acc=lin_acc,
+                    ang_vel=ang_vel,
+                )
             )
-        )
 
-        cutoff_ns = steady_ns - self.history_ns
-        while len(self._buf) > 2 and self._buf[0].steady_ns < cutoff_ns:
-            self._buf.popleft()
+            cutoff_ns = steady_ns - self.history_ns
+            while len(self._buf) > 2 and self._buf[0].steady_ns < cutoff_ns:
+                self._buf.popleft()
 
-        return True
+            return True
 
     def poll(self) -> ResamplerOutcome:
         """Emit at most one output point for the current safe window."""
+        with self._lock:
+            return self._poll_locked()
+
+    def _poll_locked(self) -> ResamplerOutcome:
+        """Emit at most one output point. Caller must hold ``_lock``."""
         if len(self._buf) < 2:
             return ResamplerOutcome(kind='wait')
 

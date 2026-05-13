@@ -307,7 +307,9 @@ class SyncManager:
 
         # ── diagnostics ──────────────────────────────────────────────
         self.stats = SyncStats()
+        self._log_lock = threading.RLock()
         self._pending_logs: list[LogEntry] = []
+        self._log_throttle: dict[str, dict[str, Any]] = {}
 
         # ── Phase 1A: unified time domain ─────────────────────────────
         # ros_minus_steady_offset: the SINGLE offset that maps
@@ -356,13 +358,50 @@ class SyncManager:
 
     def _log(self, level: str, msg: str) -> None:
         """Queue a log message for the ROS layer to emit."""
-        self._pending_logs.append(LogEntry(level, msg))
+        with self._log_lock:
+            self._pending_logs.append(LogEntry(level, msg))
+
+    def _log_throttled(
+        self,
+        level: str,
+        key: str,
+        msg: str,
+        *,
+        now_mono: float | None = None,
+        period_sec: float = 1.0,
+        first_n: int = 3,
+    ) -> None:
+        """Queue the first few messages, then emit a 1 Hz summary."""
+        now = self._clock() if now_mono is None else now_mono
+        with self._log_lock:
+            state = self._log_throttle.setdefault(
+                key, {
+                    'count': 0,
+                    'last_emit': 0.0,
+                    'suppressed': 0,
+                })
+            state['count'] += 1
+            should_emit = (
+                state['count'] <= first_n
+                or now - state['last_emit'] >= period_sec
+            )
+            if should_emit:
+                suppressed = state['suppressed']
+                suffix = (
+                    f' (suppressed {suppressed} similar messages)'
+                    if suppressed else '')
+                self._log(level, msg + suffix)
+                state['last_emit'] = now
+                state['suppressed'] = 0
+            else:
+                state['suppressed'] += 1
 
     def drain_logs(self) -> list[LogEntry]:
         """Return and clear pending log entries (called by sync_node)."""
-        logs = self._pending_logs
-        self._pending_logs = []
-        return logs
+        with self._log_lock:
+            logs = self._pending_logs
+            self._pending_logs = []
+            return logs
 
     # ── Phase 1A: unified time domain ────────────────────────────────
 
@@ -1279,9 +1318,12 @@ class SyncManager:
                 if self._img_queue and self._img_queue[0] is frame:
                     self._img_queue.popleft()
             self.stats.dropped_frames += 1
-            self._log('warn',
-                      f'Sync timeout – dropped frame t={frame.t_cam:.3f} '
-                      f'steady_lag={lag*1e3:.1f}ms')
+            self._log_throttled(
+                'warn',
+                'sync_timeout',
+                f'Sync timeout - dropped frame t={frame.t_cam:.3f} '
+                f'steady_lag={lag*1e3:.1f}ms',
+                now_mono=now_mono)
 
         # §13.2 IMU stream interruption check
         with self._imu_lock:
@@ -1297,8 +1339,10 @@ class SyncManager:
         """Register a sync failure and rearm if threshold exceeded."""
         self.stats.sync_fail_count += 1
         self._consecutive_fail_count += 1
-        self._log('warn',
-                  f'Sync fail #{self._consecutive_fail_count}: {reason}')
+        self._log_throttled(
+            'warn',
+            'sync_fail',
+            f'Sync fail #{self._consecutive_fail_count}: {reason}')
 
         if self._consecutive_fail_count >= self.cfg.sync_fail_consecutive_limit:
             self.rearm(f'consecutive_fail({reason})')

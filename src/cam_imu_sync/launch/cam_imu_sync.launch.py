@@ -103,6 +103,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'debug_expected_imu_rate_hz', default_value='0.0',
             description='Expected IMU rate for debug consistency checks'),
+        DeclareLaunchArgument(
+            'executor_threads', default_value='8',
+            description='MultiThreadedExecutor worker thread count'),
 
         # ── NEW: state-machine arguments ──────────────────────────────
         DeclareLaunchArgument(
@@ -154,6 +157,22 @@ def generate_launch_description():
             'imu_raw_hw_topic', default_value='/imu/raw_hw',
             description='Phase 1A: ImuRawHw topic from yesense driver'),
         DeclareLaunchArgument(
+            'raw_hw_qos_depth', default_value='1000',
+            description='Phase 1A: RELIABLE keep-last depth for '
+                        '/imu/raw_hw input'),
+        DeclareLaunchArgument(
+            'legacy_imu_qos_depth', default_value='50',
+            description='Legacy mode: BEST_EFFORT keep-last depth for '
+                        '/imu/data_raw input'),
+        DeclareLaunchArgument(
+            'yesense_imu_qos_depth', default_value='1000',
+            description='Yesense publisher RELIABLE keep-last depth for '
+                        '/imu/data_raw'),
+        DeclareLaunchArgument(
+            'yesense_raw_hw_qos_depth', default_value='1000',
+            description='Yesense publisher RELIABLE keep-last depth for '
+                        '/imu/raw_hw'),
+        DeclareLaunchArgument(
             'enable_header_rewrite', default_value='true',
             description='Phase 1A: rewrite all output header.stamp '
                         'from unified time domain'),
@@ -197,6 +216,10 @@ def generate_launch_description():
                 'debug_enable': LaunchConfiguration('debug_enable'),
                 'debug_expected_imu_rate_hz':
                     LaunchConfiguration('debug_expected_imu_rate_hz'),
+                'imu_qos_depth':
+                    LaunchConfiguration('yesense_imu_qos_depth'),
+                'raw_hw_qos_depth':
+                    LaunchConfiguration('yesense_raw_hw_qos_depth'),
             }.items(),
         ),
 
@@ -243,6 +266,8 @@ def generate_launch_description():
                     LaunchConfiguration('debug_enable'),
                 'debug_expected_imu_rate_hz':
                     LaunchConfiguration('debug_expected_imu_rate_hz'),
+                'executor_threads':
+                    LaunchConfiguration('executor_threads'),
                 # NEW state-machine params
                 'camera_startup_drop_sec':
                     LaunchConfiguration('camera_startup_drop_sec'),
@@ -276,6 +301,10 @@ def generate_launch_description():
                     LaunchConfiguration('deterministic_sync'),
                 'imu_raw_hw_topic':
                     LaunchConfiguration('imu_raw_hw_topic'),
+                'raw_hw_qos_depth':
+                    LaunchConfiguration('raw_hw_qos_depth'),
+                'legacy_imu_qos_depth':
+                    LaunchConfiguration('legacy_imu_qos_depth'),
                 'enable_header_rewrite':
                     LaunchConfiguration('enable_header_rewrite'),
                 'min_stable_cam_frames':

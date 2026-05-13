@@ -943,6 +943,28 @@ class TestLogDraining:
         logs = mgr.drain_logs()
         assert any('WAIT_FIRST_SYNC' in l.message for l in logs)
 
+    def test_repeated_sync_warnings_are_throttled(self):
+        mgr = _make_manager()
+
+        for _ in range(10):
+            mgr._log_throttled(
+                'warn',
+                'sync_fail',
+                'Sync fail #1: test',
+                now_mono=100.0,
+            )
+        mgr._log_throttled(
+            'warn',
+            'sync_fail',
+            'Sync fail #1: test',
+            now_mono=101.1,
+        )
+
+        logs = mgr.drain_logs()
+        assert len(logs) == 4
+        assert all(log.level == 'warn' for log in logs)
+        assert 'suppressed 7 similar messages' in logs[-1].message
+
 
 class TestHealthMonitoring:
     """Health monitoring in READY state (steady domain)."""

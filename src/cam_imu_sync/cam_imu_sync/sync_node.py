@@ -67,6 +67,28 @@ def _stamp_to_ns(stamp) -> int:
     return stamp.sec * 1_000_000_000 + stamp.nanosec
 
 
+def _safe_rclpy_shutdown() -> None:
+    """Shut rclpy down once, tolerating launch Ctrl-C ordering."""
+    if rclpy.ok():
+        rclpy.shutdown()
+
+
+def _reliable_qos(depth: int) -> QoSProfile:
+    """Build a RELIABLE, volatile QoS profile with a positive depth."""
+    return QoSProfile(
+        depth=max(1, int(depth)),
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.VOLATILE)
+
+
+def _best_effort_qos(depth: int) -> QoSProfile:
+    """Build a BEST_EFFORT, volatile QoS profile with a positive depth."""
+    return QoSProfile(
+        depth=max(1, int(depth)),
+        reliability=ReliabilityPolicy.BEST_EFFORT,
+        durability=DurabilityPolicy.VOLATILE)
+
+
 class CamImuSyncNode(Node):
     """Delay-synchronise camera and IMU with linear interpolation."""
 
@@ -116,6 +138,9 @@ class CamImuSyncNode(Node):
         self.declare_parameter('deterministic_sync', True)
         self.declare_parameter('enable_header_rewrite', True)
         self.declare_parameter('imu_raw_hw_topic', '/imu/raw_hw')
+        self.declare_parameter('raw_hw_qos_depth', 1000)
+        self.declare_parameter('legacy_imu_qos_depth', 50)
+        self.declare_parameter('executor_threads', 8)
         self.declare_parameter('min_stable_cam_frames', 10)
         self.declare_parameter('cam_stable_max_std_ms', 10.0)
 
@@ -147,6 +172,12 @@ class CamImuSyncNode(Node):
             self.get_parameter('resampled_imu_latency_ms').value)
         self._resampled_imu_max_gap_ms = float(
             self.get_parameter('resampled_imu_max_gap_ms').value)
+        self._raw_hw_qos_depth = self._get_positive_int_param(
+            'raw_hw_qos_depth', 1000)
+        self._legacy_imu_qos_depth = self._get_positive_int_param(
+            'legacy_imu_qos_depth', 50)
+        self._executor_threads = self._get_positive_int_param(
+            'executor_threads', 8)
 
         cfg = SyncConfig(
             cam_imu_time_offset=float(
@@ -226,6 +257,9 @@ class CamImuSyncNode(Node):
             'debug_enable': self._debug_enable,
             'debug_expected_imu_rate_hz':
                 f'{self._debug_expected_imu_rate_hz:.3f}',
+            'raw_hw_qos_depth': self._raw_hw_qos_depth,
+            'legacy_imu_qos_depth': self._legacy_imu_qos_depth,
+            'executor_threads': self._executor_threads,
         })
         self._diag = (
             DiagnosticsWriter(self.get_logger(), run_meta)
@@ -253,8 +287,10 @@ class CamImuSyncNode(Node):
         self._batch_imu_published: int = 0
         self._resampled_imu_published: int = 0
         self._resampled_gap_skip_count: int = 0
+        self._resample_gap_skip_since_warn: int = 0
         self._last_resample_gap_warn_ns: int = 0
         self._resample_gap_warn_period_ns: int = 1_000_000_000
+        self._resample_gap_warn_first_n: int = 3
 
         # ── state tracking for diagnostics ────────────────────────────
         self._last_reported_state = None
@@ -290,6 +326,11 @@ class CamImuSyncNode(Node):
             f'  batch_imu={self._batch_imu_topic}')
         self.get_logger().info(
             f'  pipeline_ready_topic: {pipeline_ready_topic}')
+        self.get_logger().info(
+            f'  raw_hw_qos: RELIABLE keep_last={self._raw_hw_qos_depth}  '
+            f'legacy_imu_qos: BEST_EFFORT keep_last='
+            f'{self._legacy_imu_qos_depth}  '
+            f'executor_threads={self._executor_threads}')
         if self._deterministic_sync:
             self.get_logger().info(
                 f'  [Phase 1A] DETERMINISTIC SYNC ENABLED')
@@ -334,14 +375,9 @@ class CamImuSyncNode(Node):
         resample_cg = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
 
         # ── QoS ──────────────────────────────────────────────────────
-        reliable_qos = QoSProfile(
-            depth=10,
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.VOLATILE)
-        best_effort_qos = QoSProfile(
-            depth=50,
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.VOLATILE)
+        reliable_qos = _reliable_qos(10)
+        best_effort_qos = _best_effort_qos(self._legacy_imu_qos_depth)
+        raw_hw_qos = _reliable_qos(self._raw_hw_qos_depth)
 
         # ── subscriptions ────────────────────────────────────────────
         self._img_sub = self.create_subscription(
@@ -374,17 +410,15 @@ class CamImuSyncNode(Node):
             self._ImuRawHw = ImuRawHw  # store for callback
             self._imu_raw_sub = self.create_subscription(
                 ImuRawHw, imu_raw_hw_topic, self._on_imu_raw,
-                best_effort_qos, callback_group=imu_raw_cg)
+                raw_hw_qos, callback_group=imu_raw_cg)
             self.get_logger().info(
-                f'  [Phase 1A] subscribed to {imu_raw_hw_topic}')
+                f'  [Phase 1A] subscribed to {imu_raw_hw_topic} '
+                f'(RELIABLE keep_last={self._raw_hw_qos_depth})')
         else:
             self._imu_raw_sub = None
 
         # ── publishers ───────────────────────────────────────────────
-        out_imu_qos = QoSProfile(
-            depth=50,
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.VOLATILE)
+        out_imu_qos = _best_effort_qos(50)
         self._img_pub = self.create_publisher(Image, img_out, 10)
         self._batch_imu_pub = self.create_publisher(
             Imu, self._batch_imu_topic, out_imu_qos)
@@ -411,6 +445,20 @@ class CamImuSyncNode(Node):
         self.get_logger().info(
             'cam_imu_sync_node ready (steady-domain sync, '
             'external pipeline_ready)')
+
+    def _get_positive_int_param(self, name: str, default: int) -> int:
+        """Read an integer ROS parameter and clamp invalid values."""
+        try:
+            value = int(self.get_parameter(name).value)
+        except (TypeError, ValueError):
+            self.get_logger().warn(
+                f'Parameter {name} is invalid; using {default}')
+            return default
+        if value < 1:
+            self.get_logger().warn(
+                f'Parameter {name}={value} is invalid; using 1')
+            return 1
+        return value
 
     # ================================================================
     # IMU factory (keeps sync_manager ROS-free)
@@ -647,17 +695,23 @@ class CamImuSyncNode(Node):
 
         if outcome.kind == 'skip':
             self._resampled_gap_skip_count += 1
+            self._resample_gap_skip_since_warn += 1
             now_ns = _time.monotonic_ns()
             should_warn = (
-                self._resampled_gap_skip_count <= 10
+                self._resampled_gap_skip_count <= self._resample_gap_warn_first_n
                 or now_ns - self._last_resample_gap_warn_ns
                 >= self._resample_gap_warn_period_ns
             )
             if should_warn:
+                suppressed = max(0, self._resample_gap_skip_since_warn - 1)
+                suffix = (
+                    f' (suppressed {suppressed} similar gaps)'
+                    if suppressed else '')
                 self.get_logger().warn(
                     f'resample IMU gap too large: {outcome.gap_ns / 1e6:.2f} '
-                    f'ms at steady_ns={outcome.target_steady_ns}')
+                    f'ms at steady_ns={outcome.target_steady_ns}{suffix}')
                 self._last_resample_gap_warn_ns = now_ns
+                self._resample_gap_skip_since_warn = 0
             return
 
         if outcome.point is None:
@@ -940,18 +994,24 @@ class CamImuSyncNode(Node):
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = CamImuSyncNode()
-
-    # MultiThreadedExecutor so IMU/image/timer run in parallel
-    executor = rclpy.executors.MultiThreadedExecutor(num_threads=4)
-    executor.add_node(node)
+    node = None
+    executor = None
     try:
+        node = CamImuSyncNode()
+        executor_threads = node._executor_threads
+        # MultiThreadedExecutor so IMU/image/timer run in parallel.
+        executor = rclpy.executors.MultiThreadedExecutor(
+            num_threads=executor_threads)
+        executor.add_node(node)
         executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        if executor is not None:
+            executor.shutdown()
+        if node is not None:
+            node.destroy_node()
+        _safe_rclpy_shutdown()
 
 
 if __name__ == '__main__':
