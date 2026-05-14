@@ -1,0 +1,64 @@
+{
+  "duration_sec": 127.84897994995117,
+  "errors": [],
+  "event_code_counts": {
+    "ACTIVE_MAP_RESET": 98,
+    "MONO_INIT_CREATED": 1016,
+    "MONO_INIT_FAILED_NOT_ENOUGH_MOTION": 2719,
+    "TRACK_LOCAL_MAP_FAILED": 49
+  },
+  "event_count": 3882,
+  "event_reason_counts": {
+    "active_map_reset": 49,
+    "ambiguous_motion": 772,
+    "imu_mono_low_inliers_before_imu_init": 25,
+    "initialization_window_expired": 18,
+    "local_mapping_active_map_reset": 49,
+    "not_enough_current_features": 5,
+    "not_enough_matches": 895,
+    "not_enough_motion": 211,
+    "not_enough_triangulated": 818,
+    "recent_relocalization_low_inliers": 24,
+    "reference_frame_created": 967,
+    "two_view_reconstruction_success": 49
+  },
+  "final_keyframe_count": 0,
+  "final_pose_drift_m": 0.0,
+  "first_imu_initialized_frame": null,
+  "first_ok_frame": 640,
+  "image_to_last_imu_ms": {
+    "last": 5.770921707,
+    "max": 15.138149261,
+    "mean": 5.428338808715998,
+    "median": 5.5315494535,
+    "min": 0.0
+  },
+  "imu_initialized": false,
+  "inlier_count": {
+    "last": 45.0,
+    "max": 93.0,
+    "median": 31.0
+  },
+  "insufficient_imu_frames": 2,
+  "keyframe_count": 3,
+  "late_reset_delta_30s": 8,
+  "log_path": "debug_runs/latest/03A_sync_offset_zero.log",
+  "lost_ratio": 0.0,
+  "max_lost_streak_sec": 0.0,
+  "ok_ratio": 0.02579468473163106,
+  "recently_lost_ratio": 0.01276706618030224,
+  "reset_count": 49,
+  "track_record_count": 3838,
+  "tracked_map_points": {
+    "last": 0.0,
+    "max": 131.0,
+    "median": 0.0
+  },
+  "tracking_state": "NOT_INITIALIZED",
+  "tracking_state_counts": {
+    "NOT_INITIALIZED": 3689,
+    "NO_IMAGES_YET": 1,
+    "OK": 99,
+    "RECENTLY_LOST": 49
+  }
+}

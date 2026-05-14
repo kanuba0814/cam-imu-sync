@@ -1,0 +1,55 @@
+{
+  "duration_sec": 67.67247724533081,
+  "errors": [],
+  "event_code_counts": {
+    "MONO_INIT_CREATED": 770,
+    "MONO_INIT_FAILED_NOT_ENOUGH_MOTION": 1062
+  },
+  "event_count": 1832,
+  "event_reason_counts": {
+    "ambiguous_motion": 245,
+    "not_enough_current_features": 3,
+    "not_enough_matches": 765,
+    "not_enough_motion": 17,
+    "not_enough_triangulated": 32,
+    "reference_frame_created": 769,
+    "two_view_reconstruction_success": 1
+  },
+  "final_keyframe_count": 30,
+  "final_pose_drift_m": 0.018166149,
+  "first_imu_initialized_frame": null,
+  "first_ok_frame": 1849,
+  "image_to_last_imu_ms": {
+    "last": 0.0,
+    "max": 0.0,
+    "mean": 0.0,
+    "median": 0.0,
+    "min": 0.0
+  },
+  "imu_initialized": false,
+  "inlier_count": {
+    "last": 390.0,
+    "max": 428.0,
+    "median": 0.0
+  },
+  "insufficient_imu_frames": 0,
+  "keyframe_count": 32,
+  "late_reset_delta_30s": 0,
+  "log_path": "debug_runs/latest/02_mono_sync_image.log",
+  "lost_ratio": 0.0,
+  "max_lost_streak_sec": 0.0,
+  "ok_ratio": 0.09005905511811024,
+  "recently_lost_ratio": 0.0,
+  "reset_count": 0,
+  "track_record_count": 2032,
+  "tracked_map_points": {
+    "last": 390.0,
+    "max": 428.0,
+    "median": 0.0
+  },
+  "tracking_state": "OK",
+  "tracking_state_counts": {
+    "NOT_INITIALIZED": 1849,
+    "OK": 183
+  }
+}

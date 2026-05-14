@@ -1,0 +1,659 @@
+{
+  "failures": [],
+  "main": {
+    "bag_name": "h30_sync_only_normal",
+    "bag_path": "/home/gxxl/slam_ws_v2/bags/h30_sync_only_normal",
+    "imu_results": {
+      "/sync/imu": {
+        "acc_norm": {
+          "count": 1501,
+          "max": 10.038613691492385,
+          "mean": 9.752043295308335,
+          "min": 9.341595732888855,
+          "p50": 9.752830025083764,
+          "p95": 9.773482526229591,
+          "std": 0.027328477962619696
+        },
+        "gyro_norm": {
+          "count": 1501,
+          "max": 0.023691593936881174,
+          "mean": 0.004044816869185805,
+          "min": 0.0002563207101556446,
+          "p50": 0.00328455158764832,
+          "p95": 0.009726950893610099,
+          "std": 0.0029224317270792758
+        },
+        "mean_acc_xyz": [
+          9.74360537937955,
+          -0.3595004235622058,
+          -0.18313069886121283
+        ],
+        "mean_gyro_xyz": [
+          -0.0005917359321209966,
+          -0.00043195225377672347,
+          0.0012355866586115812
+        ],
+        "static_sample_count": 1501,
+        "static_seconds": 15.0,
+        "unit_hint": "acc_mps2_like,static_gyro_radps_like",
+        "whole_bag_gyro_norm": {
+          "count": 17978,
+          "max": 2.573319759260368,
+          "mean": 0.36352980494712583,
+          "min": 0.0002563207101556446,
+          "p50": 0.31536235554688863,
+          "p95": 0.9105200687189791,
+          "std": 0.2839571431296396
+        }
+      }
+    },
+    "label": "main",
+    "status": {
+      "failures": [],
+      "status": "PASS",
+      "warnings": [
+        "/sync/imu_batch present_but_empty",
+        "/imu/pipeline_ready present_but_empty"
+      ]
+    },
+    "sync_alignment_semantics": "aligned_time_domain_offset_should_be_0",
+    "sync_image_minus_nearest_sync_imu": {
+      "count": 5396,
+      "max": 4.999876022338867,
+      "mean": -0.25672325829915243,
+      "min": -14.861822128295898,
+      "p50": -0.2892017364501953,
+      "p95": 3.956437110900879,
+      "std": 2.866423339622751,
+      "unit": "ms"
+    },
+    "topic_results": {
+      "/imu/pipeline_ready": {
+        "bag_receive_time": {
+          "first": null,
+          "last": null
+        },
+        "bool_values": {},
+        "count": 0,
+        "has_messages": false,
+        "header_minus_receive": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "header_stamp": {
+          "first": null,
+          "last": null
+        },
+        "header_stamp_monotonic": true,
+        "header_stamp_violations": 0,
+        "image_encodings": {},
+        "image_sizes": {},
+        "nan_count": 0,
+        "period": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "present_in_metadata": true,
+        "rate_hz": null,
+        "rosout_levels": {},
+        "rosout_names": {},
+        "rosout_sample_messages": [],
+        "topic": "/imu/pipeline_ready",
+        "type": "std_msgs/msg/Bool"
+      },
+      "/rosout": {
+        "bag_receive_time": {
+          "first": 1778734779.1948369,
+          "last": 1778734956.398072
+        },
+        "bool_values": {},
+        "count": 50,
+        "has_messages": true,
+        "header_minus_receive": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "header_stamp": {
+          "first": null,
+          "last": null
+        },
+        "header_stamp_monotonic": true,
+        "header_stamp_violations": 0,
+        "image_encodings": {},
+        "image_sizes": {},
+        "nan_count": 0,
+        "period": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "present_in_metadata": true,
+        "rate_hz": 0.2765186536165249,
+        "rosout_levels": {
+          "20": 48,
+          "30": 2
+        },
+        "rosout_names": {
+          "cam_imu_sync_node": 40,
+          "rosbag2_recorder": 10
+        },
+        "rosout_sample_messages": [
+          "Press SPACE for pausing/resuming",
+          "Listening for topics...",
+          "Event publisher thread: Starting",
+          "Subscribed to topic '/sync/imu_batch'",
+          "Subscribed to topic '/sync/imu'",
+          "Subscribed to topic '/sync/image_raw'",
+          "Subscribed to topic '/rosout'",
+          "Subscribed to topic '/imu/pipeline_ready'",
+          "Recording...",
+          "[IMU stats] freq=200.0 Hz  total_recv=18011  tid_gaps=0",
+          "[IMU stats] freq=200.0 Hz  total_recv=19012  tid_gaps=0",
+          "All requested topics are subscribed. Stopping discovery...",
+          "[IMU stats] freq=200.0 Hz  total_recv=20013  tid_gaps=0",
+          "[IMU stats] freq=200.0 Hz  total_recv=21014  tid_gaps=0",
+          "[IMU stats] freq=200.0 Hz  total_recv=22015  tid_gaps=0",
+          "[IMU stats] freq=200.0 Hz  total_recv=23016  tid_gaps=0",
+          "resample IMU gap too large: 18.26 ms at steady_ns=86402220000000",
+          "resample IMU gap too large: 18.26 ms at steady_ns=86402230000000",
+          "[IMU stats] freq=199.6 Hz  total_recv=24015  tid_gaps=0",
+          "[IMU stats] freq=200.0 Hz  total_recv=25015  tid_gaps=0"
+        ],
+        "topic": "/rosout",
+        "type": "rcl_interfaces/msg/Log"
+      },
+      "/sync/image_raw": {
+        "bag_receive_time": {
+          "first": 1778734779.2084336,
+          "last": 1778734958.9638655
+        },
+        "bool_values": {},
+        "count": 5396,
+        "has_messages": true,
+        "header_minus_receive": {
+          "count": 5396,
+          "max": -0.051152706146240234,
+          "mean": -0.057167915567987664,
+          "min": -0.06248307228088379,
+          "p50": -0.05743515491485596,
+          "p95": -0.052459776401519775,
+          "std": 0.002543664772063032,
+          "unit": "sec"
+        },
+        "header_stamp": {
+          "first": 1778734779.1480803,
+          "last": 1778734958.9095454
+        },
+        "header_stamp_monotonic": true,
+        "header_stamp_violations": 0,
+        "image_encodings": {
+          "yuv422_yuy2": 5396
+        },
+        "image_sizes": {
+          "640x480@step1280": 5396
+        },
+        "nan_count": 0,
+        "period": {
+          "count": 5395,
+          "max": 0.037267208099365234,
+          "mean": 0.03332001206165558,
+          "min": 0.03075695037841797,
+          "p50": 0.03217577934265137,
+          "p95": 0.036246109008789065,
+          "std": 0.0018902045748027327,
+          "unit": "sec"
+        },
+        "present_in_metadata": true,
+        "rate_hz": 30.01199393774508,
+        "rosout_levels": {},
+        "rosout_names": {},
+        "rosout_sample_messages": [],
+        "topic": "/sync/image_raw",
+        "type": "sensor_msgs/msg/Image"
+      },
+      "/sync/imu": {
+        "bag_receive_time": {
+          "first": 1778734779.1948256,
+          "last": 1778734958.992205
+        },
+        "bool_values": {},
+        "count": 17978,
+        "has_messages": true,
+        "header_minus_receive": {
+          "count": 17978,
+          "max": -0.03042435646057129,
+          "mean": -0.0397124879152521,
+          "min": -0.04395747184753418,
+          "p50": -0.04083573818206787,
+          "p95": -0.03072878122329712,
+          "std": 0.0033148351712680726,
+          "unit": "sec"
+        },
+        "header_stamp": {
+          "first": 1778734779.1612895,
+          "last": 1778734958.9512894
+        },
+        "header_stamp_monotonic": true,
+        "header_stamp_violations": 0,
+        "image_encodings": {},
+        "image_sizes": {},
+        "nan_count": 0,
+        "period": {
+          "count": 17977,
+          "max": 0.029999971389770508,
+          "mean": 0.010001112530558659,
+          "min": 0.009999990463256836,
+          "p50": 0.009999990463256836,
+          "p95": 0.009999990463256836,
+          "std": 0.00014916217486906773,
+          "unit": "sec"
+        },
+        "present_in_metadata": true,
+        "rate_hz": 99.98887593199996,
+        "rosout_levels": {},
+        "rosout_names": {},
+        "rosout_sample_messages": [],
+        "topic": "/sync/imu",
+        "type": "sensor_msgs/msg/Imu"
+      },
+      "/sync/imu_batch": {
+        "bag_receive_time": {
+          "first": null,
+          "last": null
+        },
+        "bool_values": {},
+        "count": 0,
+        "has_messages": false,
+        "header_minus_receive": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "header_stamp": {
+          "first": null,
+          "last": null
+        },
+        "header_stamp_monotonic": true,
+        "header_stamp_violations": 0,
+        "image_encodings": {},
+        "image_sizes": {},
+        "nan_count": 0,
+        "period": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "present_in_metadata": true,
+        "rate_hz": null,
+        "rosout_levels": {},
+        "rosout_names": {},
+        "rosout_sample_messages": [],
+        "topic": "/sync/imu_batch",
+        "type": "sensor_msgs/msg/Imu"
+      }
+    }
+  },
+  "output_root": "/home/gxxl/slam_ws_v2/extra_ws/debug_runs",
+  "overall_status": "PASS",
+  "static": {
+    "bag_name": "h30_sync_only_noMove",
+    "bag_path": "/home/gxxl/slam_ws_v2/bags/h30_sync_only_noMove",
+    "imu_results": {
+      "/sync/imu": {
+        "acc_norm": {
+          "count": 1501,
+          "max": 10.556783742607326,
+          "mean": 9.75172247463419,
+          "min": 7.33792732555634,
+          "p50": 9.751837007392293,
+          "p95": 9.772001129058657,
+          "std": 0.0780687464042829
+        },
+        "gyro_norm": {
+          "count": 1501,
+          "max": 0.08469796542467113,
+          "mean": 0.003979274402963959,
+          "min": 0.0004733768052740613,
+          "p50": 0.0033049144861609123,
+          "p95": 0.007905984731792012,
+          "std": 0.004051242662030743
+        },
+        "mean_acc_xyz": [
+          9.743245855839131,
+          -0.3531340297856029,
+          -0.1958183343052636
+        ],
+        "mean_gyro_xyz": [
+          -0.0005321185785647142,
+          -0.0005284688272038278,
+          0.0014055861291044167
+        ],
+        "static_sample_count": 1501,
+        "static_seconds": 15.0,
+        "unit_hint": "acc_mps2_like,static_gyro_radps_like",
+        "whole_bag_gyro_norm": {
+          "count": 1980,
+          "max": 0.08469796542467113,
+          "mean": 0.0037117195633920965,
+          "min": 0.00013044023025192685,
+          "p50": 0.0032042746949880793,
+          "p95": 0.007044481331629154,
+          "std": 0.0036057473465753013
+        }
+      }
+    },
+    "label": "static",
+    "status": {
+      "failures": [],
+      "status": "PASS",
+      "warnings": [
+        "/sync/imu_batch present_but_empty",
+        "/imu/pipeline_ready present_but_empty"
+      ]
+    },
+    "sync_alignment_semantics": "aligned_time_domain_offset_should_be_0",
+    "sync_image_minus_nearest_sync_imu": {
+      "count": 594,
+      "max": 4.998922348022461,
+      "mean": 0.22522568301319676,
+      "min": -4.978656768798828,
+      "p50": 0.6022453308105469,
+      "p95": 4.641783237457275,
+      "std": 2.797873164216733,
+      "unit": "ms"
+    },
+    "topic_results": {
+      "/imu/pipeline_ready": {
+        "bag_receive_time": {
+          "first": null,
+          "last": null
+        },
+        "bool_values": {},
+        "count": 0,
+        "has_messages": false,
+        "header_minus_receive": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "header_stamp": {
+          "first": null,
+          "last": null
+        },
+        "header_stamp_monotonic": true,
+        "header_stamp_violations": 0,
+        "image_encodings": {},
+        "image_sizes": {},
+        "nan_count": 0,
+        "period": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "present_in_metadata": true,
+        "rate_hz": null,
+        "rosout_levels": {},
+        "rosout_names": {},
+        "rosout_sample_messages": [],
+        "topic": "/imu/pipeline_ready",
+        "type": "std_msgs/msg/Bool"
+      },
+      "/rosout": {
+        "bag_receive_time": {
+          "first": 1778734689.9212296,
+          "last": 1778734706.243427
+        },
+        "bool_values": {},
+        "count": 47,
+        "has_messages": true,
+        "header_minus_receive": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "header_stamp": {
+          "first": null,
+          "last": null
+        },
+        "header_stamp_monotonic": true,
+        "header_stamp_violations": 0,
+        "image_encodings": {},
+        "image_sizes": {},
+        "nan_count": 0,
+        "period": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "present_in_metadata": true,
+        "rate_hz": 2.8182479826471,
+        "rosout_levels": {
+          "20": 45,
+          "30": 2
+        },
+        "rosout_names": {
+          "cam_imu_sync_node": 23,
+          "rosbag2_recorder": 1,
+          "usb_cam": 10,
+          "yesense_pub": 13
+        },
+        "rosout_sample_messages": [
+          "framerate: 30.000000",
+          "using default calibration URL",
+          "camera calibration URL: file:///home/gxxl/.ros/camera_info/default_cam.yaml",
+          "Camera calibration file /home/gxxl/.ros/camera_info/default_cam.yaml not found",
+          "Starting 'default_cam' (/dev/video0) at 640x480 via mmap (yuyv) at 30 FPS",
+          "Setting 'brightness' to 50",
+          "Setting 'white_balance_temperature_auto' to 1",
+          "Setting 'exposure_auto' to 3",
+          "Setting 'focus_auto' to 0",
+          "Timer triggering every 33 ms",
+          "[STEADY DOMAIN] steady_offset = 0.0500 s  (target_steady = cam_steady + offset)",
+          "  header_offset = 0.0000 s  (legacy, observation only)",
+          "interpolation = ON  max_wait=100 ms  max_gap=10 ms",
+          "state_machine: cam_drop=1.0s  imu_ready_min=40  fail_limit=5  first_sync_timeout=2.0s  first_sync_drop_limit=60",
+          "  IN:  image=/image_raw  imu=/imu/data_raw",
+          "  OUT: image=/sync/image_raw  resampled_imu=/sync/imu  batch_imu=/sync/imu_batch",
+          "  pipeline_ready_topic: /imu/pipeline_ready",
+          "  [Phase 1A] ros_minus_steady_offset = 1778648398.951289 s",
+          "cam_imu_sync_node ready (steady-domain sync, external pipeline_ready)",
+          "[sync state] WAIT_IMU_READY"
+        ],
+        "topic": "/rosout",
+        "type": "rcl_interfaces/msg/Log"
+      },
+      "/sync/image_raw": {
+        "bag_receive_time": {
+          "first": 1778734689.9477897,
+          "last": 1778734709.7023387
+        },
+        "bool_values": {},
+        "count": 594,
+        "has_messages": true,
+        "header_minus_receive": {
+          "count": 594,
+          "max": -0.05505871772766113,
+          "mean": -0.05820301526323312,
+          "min": -0.06140398979187012,
+          "p50": -0.05815935134887695,
+          "p95": -0.05581656694412231,
+          "std": 0.0014620255662478965,
+          "unit": "sec"
+        },
+        "header_stamp": {
+          "first": 1778734689.8882244,
+          "last": 1778734709.6435864
+        },
+        "header_stamp_monotonic": true,
+        "header_stamp_violations": 0,
+        "image_encodings": {
+          "yuv422_yuy2": 594
+        },
+        "image_sizes": {
+          "640x480@step1280": 594
+        },
+        "nan_count": 0,
+        "period": {
+          "count": 593,
+          "max": 0.03680586814880371,
+          "mean": 0.033314269871575035,
+          "min": 0.03109145164489746,
+          "p50": 0.0321958065032959,
+          "p95": 0.036311101913452146,
+          "std": 0.0019321819754397024,
+          "unit": "sec"
+        },
+        "present_in_metadata": true,
+        "rate_hz": 30.017166933417833,
+        "rosout_levels": {},
+        "rosout_names": {},
+        "rosout_sample_messages": [],
+        "topic": "/sync/image_raw",
+        "type": "sensor_msgs/msg/Image"
+      },
+      "/sync/imu": {
+        "bag_receive_time": {
+          "first": 1778734689.9218884,
+          "last": 1778734709.7124949
+        },
+        "bool_values": {},
+        "count": 1980,
+        "has_messages": true,
+        "header_minus_receive": {
+          "count": 1980,
+          "max": -0.03040337562561035,
+          "mean": -0.030879660327025136,
+          "min": -0.03271150588989258,
+          "p50": -0.030789732933044434,
+          "p95": -0.030563294887542725,
+          "std": 0.00033293933884764464,
+          "unit": "sec"
+        },
+        "header_stamp": {
+          "first": 1778734689.8912895,
+          "last": 1778734709.6812894
+        },
+        "header_stamp_monotonic": true,
+        "header_stamp_violations": 0,
+        "image_encodings": {},
+        "image_sizes": {},
+        "nan_count": 0,
+        "period": {
+          "count": 1979,
+          "max": 0.010000228881835938,
+          "mean": 0.009999999980724117,
+          "min": 0.009999990463256836,
+          "p50": 0.009999990463256836,
+          "p95": 0.009999990463256836,
+          "std": 4.667503446520794e-08,
+          "unit": "sec"
+        },
+        "present_in_metadata": true,
+        "rate_hz": 100.00000019275883,
+        "rosout_levels": {},
+        "rosout_names": {},
+        "rosout_sample_messages": [],
+        "topic": "/sync/imu",
+        "type": "sensor_msgs/msg/Imu"
+      },
+      "/sync/imu_batch": {
+        "bag_receive_time": {
+          "first": null,
+          "last": null
+        },
+        "bool_values": {},
+        "count": 0,
+        "has_messages": false,
+        "header_minus_receive": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "header_stamp": {
+          "first": null,
+          "last": null
+        },
+        "header_stamp_monotonic": true,
+        "header_stamp_violations": 0,
+        "image_encodings": {},
+        "image_sizes": {},
+        "nan_count": 0,
+        "period": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "min": null,
+          "p50": null,
+          "p95": null,
+          "std": null,
+          "unit": "sec"
+        },
+        "present_in_metadata": true,
+        "rate_hz": null,
+        "rosout_levels": {},
+        "rosout_names": {},
+        "rosout_sample_messages": [],
+        "topic": "/sync/imu_batch",
+        "type": "sensor_msgs/msg/Imu"
+      }
+    }
+  }
+}
