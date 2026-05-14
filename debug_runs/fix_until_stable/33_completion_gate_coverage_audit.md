@@ -8,8 +8,8 @@ Fix `ORB_SLAM3_ROS2` + `ORB_SLAM3` for the fixed H30 sync-only ROS 2 bag. Comple
 
 - Current behavioral baseline: `14_revert_preinit_inliers_35`
 - Result: `pass_count=0/3`
-- Latest wrapper validation-tooling commit: `41b7b93 test: guard final artifacts with replay preflight`
-- Latest evidence commit in `extra_ws`: `6b7227d debug: document final replay preflight artifact guard`
+- Latest wrapper validation-tooling commit: `e9df367 test: recompute final stability gates`
+- Latest evidence commit in `extra_ws`: `d620a23 debug: document final gate recomputation evidence`
 - Next behavioral hypothesis already documented: set H30 `Camera.fps` to `9`
 - Current blocker: `autoware_env_v2_host` Docker access is not available until the approval window reopens, so the next behavior change is not applied yet.
 - Next real replay timeout: `--timeout-sec 210`; `180` seconds is rejected by preflight for the full fixed bag.
@@ -26,7 +26,7 @@ Fix `ORB_SLAM3_ROS2` + `ORB_SLAM3` for the fixed H30 sync-only ROS 2 bag. Comple
 | Validate through ROS 2 wrapper | `run_stability_replay.py` launches `ros2 launch orb_slam3_ros2 h30_bag_replay.launch.py`; final artifact generator rejects run commands that are not the guarded wrapper launch path | Covered |
 | Build/test/run inside `autoware_env_v2_host` | Workspace `AGENTS.md` and memory rule require containerized ROS validation | Covered but currently blocked |
 | Do not treat `imu_initialized=true` alone as success | `parse_runtime_orb_log.py` requires all stability gates, not just IMU init | Covered |
-| At least 3 offline replays pass | `run_stability_replay.py --runs 3`; aggregate requires all runs to pass and return code 0; final artifact generator requires at least three passing runs | Covered, currently failing |
+| At least 3 offline replays pass | `run_stability_replay.py --runs 3`; aggregate requires all runs to pass and return code 0; final artifact generator requires at least three passing runs and recomputes each final stability gate from metrics | Covered, currently failing |
 | IMU initialized each run | `imu_initialized` gate in parser | Covered |
 | Reset count does not increase after init | `reset_count_after_init == 0` gate | Covered, currently failing |
 | OK ratio after init >= 0.90 | `ok_ratio_after_init >= 0.90` gate | Covered, currently failing |
@@ -42,9 +42,9 @@ Fix `ORB_SLAM3_ROS2` + `ORB_SLAM3` for the fixed H30 sync-only ROS 2 bag. Comple
 | Do not publish fake pose while invalid | Parser counts `invalid_pose_publish_count == 0` from `[orb_pose_gate]` | Covered |
 | Replay settings provenance | Aggregate Markdown and final report include `settings_file`, `settings_camera_fps`, QoS override, image FPS, timeout, rate, and play delay | Covered |
 | Full fixed-bag timeout | `run_stability_replay.py` computes `required_timeout_sec`; `45_evidence_timeout_guard_for_full_bag_replay.md` shows `--timeout-sec 180` rejected and `210` accepted | Covered |
-| Final `best_config.yaml` | Not generated for a passing final state; generator refuses incomplete or non-wrapper evidence | Missing |
-| Final `decision.md` | Not generated for a passing final state; generator refuses incomplete or non-wrapper evidence | Missing |
-| Final `stability_report.md` or `final_stability_report.md` | Not generated for a passing final state; generator refuses incomplete or non-wrapper evidence | Missing |
+| Final `best_config.yaml` | Not generated for a passing final state; generator refuses incomplete, non-wrapper, or gate-inconsistent evidence | Missing |
+| Final `decision.md` | Not generated for a passing final state; generator refuses incomplete, non-wrapper, or gate-inconsistent evidence | Missing |
+| Final `stability_report.md` or `final_stability_report.md` | Not generated for a passing final state; generator refuses incomplete, non-wrapper, or gate-inconsistent evidence | Missing |
 | Default launch/config changes have evidence | Current kept changes have evidence; next `Camera.fps: 9` is documented but not applied or validated | Incomplete |
 
 ## Current failure evidence
@@ -74,6 +74,6 @@ Then immediately:
 3. Run the fixed-bag ROS 2 wrapper replay three times with label `15_camera_fps_9` and `--timeout-sec 210`.
 4. Write replay evidence under `extra_ws/debug_runs/fix_until_stable/`.
 5. Keep only if the evidence improves toward the stability gates; otherwise revert or mark the change failed.
-6. If all three runs pass, generate final artifacts with `generate_final_stability_artifacts.py`; the current generator requires sync-only preflight metadata, wrapper launch commands, and full-replay timeout evidence.
+6. If all three runs pass, generate final artifacts with `generate_final_stability_artifacts.py`; the current generator requires sync-only preflight metadata, wrapper launch commands, full-replay timeout evidence, and independently recomputed stability gates.
 
 The goal is not complete.
