@@ -9,7 +9,7 @@ Fix `ORB_SLAM3_ROS2` + `ORB_SLAM3` for the fixed H30 sync-only ROS 2 bag. Comple
 - Current behavioral baseline: `14_revert_preinit_inliers_35`
 - Result: `pass_count=0/3`
 - Latest wrapper validation-tooling commit: `6a89123 test: accept numeric equivalent final replay args`
-- Latest evidence commit in `extra_ws`: `4a7d453 debug: document numeric-equivalent final args`
+- Latest evidence commit in `extra_ws`: `e4478b2 debug: document next H30 fps replay runbook`
 - Next behavioral hypothesis already documented: set H30 `Camera.fps` to `9`
 - Current blocker: `autoware_env_v2_host` Docker access is not available until the approval window reopens, so the next behavior change is not applied yet.
 - Next real replay timeout: `--timeout-sec 210`; `180` seconds is rejected by preflight for the full fixed bag.
