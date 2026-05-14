@@ -8,8 +8,8 @@ Fix `ORB_SLAM3_ROS2` + `ORB_SLAM3` for the fixed H30 sync-only ROS 2 bag. Comple
 
 - Current behavioral baseline: `14_revert_preinit_inliers_35`
 - Result: `pass_count=0/3`
-- Latest wrapper validation-tooling commit: `16964f2 test: require final settings match replay preflight`
-- Latest evidence commit in `extra_ws`: `4c69532 debug: document final settings preflight guard`
+- Latest wrapper validation-tooling commit: `2e8617b test: require final commands match replay preflight`
+- Latest evidence commit in `extra_ws`: `e30f7a3 debug: document final command preflight guard`
 - Next behavioral hypothesis already documented: set H30 `Camera.fps` to `9`
 - Current blocker: `autoware_env_v2_host` Docker access is not available until the approval window reopens, so the next behavior change is not applied yet.
 - Next real replay timeout: `--timeout-sec 210`; `180` seconds is rejected by preflight for the full fixed bag.
@@ -23,7 +23,7 @@ Fix `ORB_SLAM3_ROS2` + `ORB_SLAM3` for the fixed H30 sync-only ROS 2 bag. Comple
 | Do not start real camera driver | `h30_bag_replay.launch.py` starts ORB wrapper, optional `ros2 bag play`, optional RViz only | Covered |
 | Do not start real IMU driver | `h30_bag_replay.launch.py` starts ORB wrapper, optional `ros2 bag play`, optional RViz only | Covered |
 | Do not start live `cam_imu_sync` | `h30_bag_replay.launch.py` comment and actions exclude `cam_imu_sync` | Covered |
-| Validate through ROS 2 wrapper | `run_stability_replay.py` launches `ros2 launch orb_slam3_ros2 h30_bag_replay.launch.py`; final artifact generator rejects run commands that are not the guarded wrapper launch path | Covered |
+| Validate through ROS 2 wrapper | `run_stability_replay.py` launches `ros2 launch orb_slam3_ros2 h30_bag_replay.launch.py`; final artifact generator rejects run commands that are not the guarded wrapper launch path or do not match aggregate preflight bag/settings/QoS/rate/play-delay values | Covered |
 | Build/test/run inside `autoware_env_v2_host` | Workspace `AGENTS.md` and memory rule require containerized ROS validation | Covered but currently blocked |
 | Do not treat `imu_initialized=true` alone as success | `parse_runtime_orb_log.py` requires all stability gates, not just IMU init | Covered |
 | At least 3 offline replays pass | `run_stability_replay.py --runs 3`; aggregate requires all runs to pass and return code 0; final artifact generator requires at least three passing runs and recomputes each final stability gate from metrics | Covered, currently failing |
@@ -74,6 +74,6 @@ Then immediately:
 3. Run the fixed-bag ROS 2 wrapper replay three times with label `15_camera_fps_9` and `--timeout-sec 210`.
 4. Write replay evidence under `extra_ws/debug_runs/fix_until_stable/`.
 5. Keep only if the evidence improves toward the stability gates; otherwise revert or mark the change failed.
-6. If all three runs pass, generate final artifacts with `generate_final_stability_artifacts.py`; the current generator requires sync-only preflight metadata, wrapper launch commands, full-replay timeout evidence, independently recomputed stability gates, and settings-file/FPS consistency with replay preflight.
+6. If all three runs pass, generate final artifacts with `generate_final_stability_artifacts.py`; the current generator requires sync-only preflight metadata, wrapper launch commands matching replay preflight, full-replay timeout evidence, independently recomputed stability gates, and settings-file/FPS consistency with replay preflight.
 
 The goal is not complete.
