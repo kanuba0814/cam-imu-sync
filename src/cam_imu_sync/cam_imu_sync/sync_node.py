@@ -89,6 +89,17 @@ def _best_effort_qos(depth: int) -> QoSProfile:
         durability=DurabilityPolicy.VOLATILE)
 
 
+def _input_imu_rate_hz(
+    window_rate_hz: float, mean_period_ms: float,
+) -> float:
+    """Return the best current estimate of received input IMU rate."""
+    if window_rate_hz > 0.0:
+        return window_rate_hz
+    if mean_period_ms > 0.0:
+        return 1000.0 / mean_period_ms
+    return 0.0
+
+
 class CamImuSyncNode(Node):
     """Delay-synchronise camera and IMU with linear interpolation."""
 
@@ -876,6 +887,10 @@ class CamImuSyncNode(Node):
         """Periodic stats output (§14 – every 1 second)."""
         s = self._manager.stats
         state = self._manager.state.value
+        input_imu_rate_hz = _input_imu_rate_hz(
+            self._last_observed_imu_rate_hz,
+            self._imu_period_stats.mean,
+        )
         self.get_logger().info(
             f'[sync stats] state={state}  synced={s.synced_frames}  '
             f'dropped={s.dropped_frames}  '
@@ -884,6 +899,9 @@ class CamImuSyncNode(Node):
             f'batch_imu_pub={self._batch_imu_published}  '
             f'resampled_imu_pub={self._resampled_imu_published}  '
             f'resample_gap_skip={self._resampled_gap_skip_count}  '
+            f'input_imu_rate_hz={input_imu_rate_hz:.1f}  '
+            f'input_imu_period_ms={self._imu_period_stats.mean:.3f}  '
+            f'input_imu_period_std_ms={self._imu_period_stats.std:.3f}  '
             f'timeout={s.sync_wait_timeout_count}  '
             f'ts_anomaly={s.timestamp_anomaly_count}  '
             f'q_overflow={s.queue_overflow_count}  '
@@ -901,8 +919,9 @@ class CamImuSyncNode(Node):
             batch_imu_pub=self._batch_imu_published,
             resampled_imu_pub=self._resampled_imu_published,
             resample_gap_skip=self._resampled_gap_skip_count,
+            input_imu_rate_hz=f'{input_imu_rate_hz:.3f}',
             observed_sync_imu_rate_hz=
-                f'{self._last_observed_imu_rate_hz:.3f}',
+                f'{input_imu_rate_hz:.3f}',
             imu_mean_period_ms=f'{self._imu_period_stats.mean:.3f}',
             imu_period_std_ms=f'{self._imu_period_stats.std:.3f}',
             cam_mean_period_ms=f'{self._cam_period_stats.mean:.3f}',
@@ -923,6 +942,10 @@ class CamImuSyncNode(Node):
                      if self._cam_period_stats.n > 0 else 0)
         imu_count = (self._imu_period_stats.n + 1
                      if self._imu_period_stats.n > 0 else 0)
+        input_imu_rate_hz = _input_imu_rate_hz(
+            self._last_observed_imu_rate_hz,
+            self._imu_period_stats.mean,
+        )
 
         summary = {
             'cam_frames': cam_count,
@@ -930,6 +953,7 @@ class CamImuSyncNode(Node):
             'sync_frames': s.synced_frames,
             'dropped_frames': s.dropped_frames,
             'cam_mean_period_ms': f'{self._cam_period_stats.mean:.3f}',
+            'input_imu_rate_hz': f'{input_imu_rate_hz:.3f}',
             'imu_mean_period_ms': f'{self._imu_period_stats.mean:.3f}',
             'imu_period_std_ms': f'{self._imu_period_stats.std:.3f}',
             'cam_to_sync_mean_ms':

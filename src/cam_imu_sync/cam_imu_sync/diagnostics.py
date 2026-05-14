@@ -63,7 +63,8 @@ RESAMPLED_IMU_COLUMNS = [
 SUMMARY_COLUMNS = [
     'steady_ns', 'state', 'synced_frames', 'dropped_frames',
     'interp_count', 'sync_batch_imu', 'batch_imu_pub',
-    'resampled_imu_pub', 'resample_gap_skip', 'observed_sync_imu_rate_hz',
+    'resampled_imu_pub', 'resample_gap_skip', 'input_imu_rate_hz',
+    'observed_sync_imu_rate_hz',
     'imu_mean_period_ms', 'imu_period_std_ms', 'cam_mean_period_ms',
     'sync_fails', 'resets',
 ]
