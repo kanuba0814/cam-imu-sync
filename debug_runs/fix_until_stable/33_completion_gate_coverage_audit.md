@@ -8,8 +8,8 @@ Fix `ORB_SLAM3_ROS2` + `ORB_SLAM3` for the fixed H30 sync-only ROS 2 bag. Comple
 
 - Current behavioral baseline: `14_revert_preinit_inliers_35`
 - Result: `pass_count=0/3`
-- Latest wrapper validation-tooling commit: `2e8617b test: require final commands match replay preflight`
-- Latest evidence commit in `extra_ws`: `e30f7a3 debug: document final command preflight guard`
+- Latest wrapper validation-tooling commit: `0a817c1 test: require final replay covers full bag`
+- Latest evidence commit in `extra_ws`: `18b3bec debug: document final full-bag replay guard`
 - Next behavioral hypothesis already documented: set H30 `Camera.fps` to `9`
 - Current blocker: `autoware_env_v2_host` Docker access is not available until the approval window reopens, so the next behavior change is not applied yet.
 - Next real replay timeout: `--timeout-sec 210`; `180` seconds is rejected by preflight for the full fixed bag.
@@ -41,7 +41,7 @@ Fix `ORB_SLAM3_ROS2` + `ORB_SLAM3` for the fixed H30 sync-only ROS 2 bag. Comple
 | ORB processed FPS or controlled drop is stable | Parser now emits `orb_processed_fps_est` and `controlled_backlog_pass` | Covered |
 | Do not publish fake pose while invalid | Parser counts `invalid_pose_publish_count == 0` from `[orb_pose_gate]` | Covered |
 | Replay settings provenance | Aggregate Markdown and final report include `settings_file`, `settings_camera_fps`, QoS override, image FPS, timeout, rate, and play delay; final generator requires copied `best_config.yaml` source to match replay preflight settings path and FPS | Covered |
-| Full fixed-bag timeout | `run_stability_replay.py` computes `required_timeout_sec`; `45_evidence_timeout_guard_for_full_bag_replay.md` shows `--timeout-sec 180` rejected and `210` accepted | Covered |
+| Full fixed-bag replay | `run_stability_replay.py` computes `required_timeout_sec`; `45_evidence_timeout_guard_for_full_bag_replay.md` shows `--timeout-sec 180` rejected and `210` accepted; final generator requires `replay_duration_sec == bag_time_span_sec` and command `duration:=0.0` | Covered |
 | Final `best_config.yaml` | Not generated for a passing final state; generator refuses incomplete, non-wrapper, gate-inconsistent, or settings-mismatched evidence | Missing |
 | Final `decision.md` | Not generated for a passing final state; generator refuses incomplete, non-wrapper, gate-inconsistent, or settings-mismatched evidence | Missing |
 | Final `stability_report.md` or `final_stability_report.md` | Not generated for a passing final state; generator refuses incomplete, non-wrapper, gate-inconsistent, or settings-mismatched evidence | Missing |
@@ -74,6 +74,6 @@ Then immediately:
 3. Run the fixed-bag ROS 2 wrapper replay three times with label `15_camera_fps_9` and `--timeout-sec 210`.
 4. Write replay evidence under `extra_ws/debug_runs/fix_until_stable/`.
 5. Keep only if the evidence improves toward the stability gates; otherwise revert or mark the change failed.
-6. If all three runs pass, generate final artifacts with `generate_final_stability_artifacts.py`; the current generator requires sync-only preflight metadata, wrapper launch commands matching replay preflight, full-replay timeout evidence, independently recomputed stability gates, and settings-file/FPS consistency with replay preflight.
+6. If all three runs pass, generate final artifacts with `generate_final_stability_artifacts.py`; the current generator requires sync-only preflight metadata, wrapper launch commands matching replay preflight, full-bag duration evidence, full-replay timeout evidence, independently recomputed stability gates, and settings-file/FPS consistency with replay preflight.
 
 The goal is not complete.
