@@ -14,7 +14,13 @@ ORB-SLAM3 uses camera FPS to derive frame-window behavior such as max frames and
 
 ## Minimal change
 
-After confirming the exact `/sync/image_raw` bag rate, update only the H30 YAML `Camera.fps` value to match the fixed bag cadence. Candidate range from runtime summaries is 10-11 FPS.
+The exact `/sync/image_raw` bag rate was confirmed from sqlite metadata as approximately `9.2743 Hz`. ORB-SLAM3 reads `Camera.fps` as an integer, so the next one-line behavior change should set:
+
+```yaml
+Camera.fps: 9
+```
+
+This only matches ORB frame-window timing to the fixed bag cadence.
 
 Do not combine this with threshold changes. Keep:
 
@@ -22,7 +28,7 @@ Do not combine this with threshold changes. Keep:
 LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
 ```
 
-and leave the inlier gates at their defaults.
+and leave the inlier gates, ORBextractor settings, IMU parameters, queue limits, and wrapper pose gates unchanged.
 
 ## Expected validation signal
 
