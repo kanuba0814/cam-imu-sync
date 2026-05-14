@@ -11,13 +11,21 @@ from cam_imu_sync.diagnostics import SUMMARY_COLUMNS
 from cam_imu_sync.sync_node import (
     _best_effort_qos,
     _input_imu_rate_hz,
-    _reliable_qos,
+    _qos_reliability_name,
     _safe_rclpy_shutdown,
+    _sensor_qos,
 )
 
 
-def test_raw_hw_qos_default_is_reliable_depth_1000():
-    qos = _reliable_qos(1000)
+def test_sensor_qos_supports_best_effort_depth_1000():
+    qos = _sensor_qos(1000, 'best_effort')
+
+    assert qos.depth == 1000
+    assert qos.reliability == ReliabilityPolicy.BEST_EFFORT
+
+
+def test_sensor_qos_still_supports_reliable_depth_1000():
+    qos = _sensor_qos(1000, 'reliable')
 
     assert qos.depth == 1000
     assert qos.reliability == ReliabilityPolicy.RELIABLE
@@ -28,6 +36,10 @@ def test_legacy_imu_qos_default_stays_best_effort_depth_50():
 
     assert qos.depth == 50
     assert qos.reliability == ReliabilityPolicy.BEST_EFFORT
+
+
+def test_invalid_qos_reliability_falls_back_to_best_effort():
+    assert _qos_reliability_name('invalid') == 'best_effort'
 
 
 def test_summary_keeps_input_imu_rate_and_compat_alias():

@@ -77,6 +77,9 @@ def generate_launch_description():
             'resampled_imu_max_gap_ms', default_value='15.0',
             description='Maximum raw-IMU bracket gap for resampling'),
         DeclareLaunchArgument(
+            'resampled_imu_threaded_publish', default_value='true',
+            description='Publish fixed-rate IMU from a dedicated thread'),
+        DeclareLaunchArgument(
             'publish_batch_imu', default_value='false',
             description='Publish legacy camera-window IMU batch output'),
         DeclareLaunchArgument(
@@ -100,6 +103,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'debug_enable', default_value='false',
             description='Enable structured terminal diagnostics output'),
+        DeclareLaunchArgument(
+            'debug_trace_samples', default_value='false',
+            description='Print per-sample trace logs in addition to summary'),
         DeclareLaunchArgument(
             'debug_expected_imu_rate_hz', default_value='0.0',
             description='Expected IMU rate for debug consistency checks'),
@@ -158,20 +164,45 @@ def generate_launch_description():
             description='Phase 1A: ImuRawHw topic from yesense driver'),
         DeclareLaunchArgument(
             'raw_hw_qos_depth', default_value='1000',
-            description='Phase 1A: RELIABLE keep-last depth for '
+            description='Phase 1A: keep-last depth for '
                         '/imu/raw_hw input'),
+        DeclareLaunchArgument(
+            'raw_hw_qos_reliability', default_value='best_effort',
+            description='Phase 1A: /imu/raw_hw input reliability '
+                        '(best_effort or reliable)'),
         DeclareLaunchArgument(
             'legacy_imu_qos_depth', default_value='50',
             description='Legacy mode: BEST_EFFORT keep-last depth for '
                         '/imu/data_raw input'),
         DeclareLaunchArgument(
             'yesense_imu_qos_depth', default_value='1000',
-            description='Yesense publisher RELIABLE keep-last depth for '
+            description='Yesense publisher keep-last depth for '
                         '/imu/data_raw'),
         DeclareLaunchArgument(
+            'yesense_imu_qos_reliability', default_value='best_effort',
+            description='Yesense /imu/data_raw reliability '
+                        '(best_effort or reliable)'),
+        DeclareLaunchArgument(
             'yesense_raw_hw_qos_depth', default_value='1000',
-            description='Yesense publisher RELIABLE keep-last depth for '
+            description='Yesense publisher keep-last depth for '
                         '/imu/raw_hw'),
+        DeclareLaunchArgument(
+            'yesense_raw_hw_qos_reliability', default_value='best_effort',
+            description='Yesense /imu/raw_hw reliability '
+                        '(best_effort or reliable)'),
+        DeclareLaunchArgument(
+            'yesense_publish_queue_depth', default_value='4000',
+            description='Yesense serial-to-ROS publish queue depth'),
+        DeclareLaunchArgument(
+            'yesense_ros_imu_publish_queue_depth', default_value='4000',
+            description='Yesense /imu/data_raw async queue depth'),
+        DeclareLaunchArgument(
+            'yesense_legacy_publish_queue_depth', default_value='4000',
+            description='Yesense non-critical legacy topic queue depth'),
+        DeclareLaunchArgument(
+            'yesense_realtime_thread_priority', default_value='0',
+            description='Optional SCHED_FIFO priority for Yesense '
+                        'serial/raw_hw threads; 0 disables it'),
         DeclareLaunchArgument(
             'enable_header_rewrite', default_value='true',
             description='Phase 1A: rewrite all output header.stamp '
@@ -214,12 +245,29 @@ def generate_launch_description():
                     'launch', 'yesense_node.launch.py'])),
             launch_arguments={
                 'debug_enable': LaunchConfiguration('debug_enable'),
+                'debug_trace_samples':
+                    LaunchConfiguration('debug_trace_samples'),
                 'debug_expected_imu_rate_hz':
                     LaunchConfiguration('debug_expected_imu_rate_hz'),
                 'imu_qos_depth':
                     LaunchConfiguration('yesense_imu_qos_depth'),
                 'raw_hw_qos_depth':
                     LaunchConfiguration('yesense_raw_hw_qos_depth'),
+                'imu_qos_reliability':
+                    LaunchConfiguration('yesense_imu_qos_reliability'),
+                'raw_hw_qos_reliability':
+                    LaunchConfiguration('yesense_raw_hw_qos_reliability'),
+                'publish_queue_depth':
+                    LaunchConfiguration('yesense_publish_queue_depth'),
+                'ros_imu_publish_queue_depth':
+                    LaunchConfiguration(
+                        'yesense_ros_imu_publish_queue_depth'),
+                'legacy_publish_queue_depth':
+                    LaunchConfiguration(
+                        'yesense_legacy_publish_queue_depth'),
+                'realtime_thread_priority':
+                    LaunchConfiguration(
+                        'yesense_realtime_thread_priority'),
             }.items(),
         ),
 
@@ -248,6 +296,8 @@ def generate_launch_description():
                     LaunchConfiguration('resampled_imu_latency_ms'),
                 'resampled_imu_max_gap_ms':
                     LaunchConfiguration('resampled_imu_max_gap_ms'),
+                'resampled_imu_threaded_publish':
+                    LaunchConfiguration('resampled_imu_threaded_publish'),
                 'publish_batch_imu':
                     LaunchConfiguration('publish_batch_imu'),
                 'batch_imu_topic':
@@ -264,6 +314,8 @@ def generate_launch_description():
                     LaunchConfiguration('warn_on_queue_backlog'),
                 'debug_enable':
                     LaunchConfiguration('debug_enable'),
+                'debug_trace_samples':
+                    LaunchConfiguration('debug_trace_samples'),
                 'debug_expected_imu_rate_hz':
                     LaunchConfiguration('debug_expected_imu_rate_hz'),
                 'executor_threads':
@@ -303,6 +355,8 @@ def generate_launch_description():
                     LaunchConfiguration('imu_raw_hw_topic'),
                 'raw_hw_qos_depth':
                     LaunchConfiguration('raw_hw_qos_depth'),
+                'raw_hw_qos_reliability':
+                    LaunchConfiguration('raw_hw_qos_reliability'),
                 'legacy_imu_qos_depth':
                     LaunchConfiguration('legacy_imu_qos_depth'),
                 'enable_header_rewrite':

@@ -44,6 +44,7 @@ the standard ROS 2 log directory.
 
 from __future__ import annotations
 
+import threading
 import time as _time
 
 import rclpy
@@ -89,6 +90,21 @@ def _best_effort_qos(depth: int) -> QoSProfile:
         durability=DurabilityPolicy.VOLATILE)
 
 
+def _qos_reliability_name(value) -> str:
+    """Normalize a reliability parameter for sensor-data QoS."""
+    text = str(value).strip().lower()
+    if text == 'reliable':
+        return 'reliable'
+    return 'best_effort'
+
+
+def _sensor_qos(depth: int, reliability: str) -> QoSProfile:
+    """Build a sensor-data QoS profile with configurable reliability."""
+    if _qos_reliability_name(reliability) == 'reliable':
+        return _reliable_qos(depth)
+    return _best_effort_qos(depth)
+
+
 def _input_imu_rate_hz(
     window_rate_hz: float, mean_period_ms: float,
 ) -> float:
@@ -119,6 +135,7 @@ class CamImuSyncNode(Node):
         self.declare_parameter('resampled_imu_rate_hz', 100.0)
         self.declare_parameter('resampled_imu_latency_ms', 20.0)
         self.declare_parameter('resampled_imu_max_gap_ms', 15.0)
+        self.declare_parameter('resampled_imu_threaded_publish', True)
         self.declare_parameter('publish_batch_imu', False)
         self.declare_parameter('batch_imu_topic', '/sync/imu_batch')
         # §12 / §13 parameters
@@ -129,6 +146,7 @@ class CamImuSyncNode(Node):
         self.declare_parameter('max_image_queue_size', 20)
         # diagnostics parameters
         self.declare_parameter('debug_enable', False)
+        self.declare_parameter('debug_trace_samples', False)
         self.declare_parameter('debug_expected_imu_rate_hz', 0.0)
 
         # ── state-machine parameters ─────────────────────────────────
@@ -150,6 +168,7 @@ class CamImuSyncNode(Node):
         self.declare_parameter('enable_header_rewrite', True)
         self.declare_parameter('imu_raw_hw_topic', '/imu/raw_hw')
         self.declare_parameter('raw_hw_qos_depth', 1000)
+        self.declare_parameter('raw_hw_qos_reliability', 'best_effort')
         self.declare_parameter('legacy_imu_qos_depth', 50)
         self.declare_parameter('executor_threads', 8)
         self.declare_parameter('min_stable_cam_frames', 10)
@@ -183,8 +202,12 @@ class CamImuSyncNode(Node):
             self.get_parameter('resampled_imu_latency_ms').value)
         self._resampled_imu_max_gap_ms = float(
             self.get_parameter('resampled_imu_max_gap_ms').value)
+        self._resampled_imu_threaded_publish = bool(
+            self.get_parameter('resampled_imu_threaded_publish').value)
         self._raw_hw_qos_depth = self._get_positive_int_param(
             'raw_hw_qos_depth', 1000)
+        self._raw_hw_qos_reliability = _qos_reliability_name(
+            self.get_parameter('raw_hw_qos_reliability').value)
         self._legacy_imu_qos_depth = self._get_positive_int_param(
             'legacy_imu_qos_depth', 50)
         self._executor_threads = self._get_positive_int_param(
@@ -260,6 +283,8 @@ class CamImuSyncNode(Node):
 
         # ── diagnostics setup ─────────────────────────────────────────
         self._debug_enable = bool(self.get_parameter('debug_enable').value)
+        self._debug_trace_samples = bool(
+            self.get_parameter('debug_trace_samples').value)
         self._debug_expected_imu_rate_hz = float(
             self.get_parameter('debug_expected_imu_rate_hz').value)
         run_meta = build_run_meta(cfg)
@@ -269,8 +294,12 @@ class CamImuSyncNode(Node):
             'debug_expected_imu_rate_hz':
                 f'{self._debug_expected_imu_rate_hz:.3f}',
             'raw_hw_qos_depth': self._raw_hw_qos_depth,
+            'raw_hw_qos_reliability': self._raw_hw_qos_reliability,
             'legacy_imu_qos_depth': self._legacy_imu_qos_depth,
             'executor_threads': self._executor_threads,
+            'debug_trace_samples': self._debug_trace_samples,
+            'resampled_imu_threaded_publish':
+                self._resampled_imu_threaded_publish,
         })
         self._diag = (
             DiagnosticsWriter(self.get_logger(), run_meta)
@@ -338,7 +367,8 @@ class CamImuSyncNode(Node):
         self.get_logger().info(
             f'  pipeline_ready_topic: {pipeline_ready_topic}')
         self.get_logger().info(
-            f'  raw_hw_qos: RELIABLE keep_last={self._raw_hw_qos_depth}  '
+            f'  raw_hw_qos: {self._raw_hw_qos_reliability} '
+            f'keep_last={self._raw_hw_qos_depth}  '
             f'legacy_imu_qos: BEST_EFFORT keep_last='
             f'{self._legacy_imu_qos_depth}  '
             f'executor_threads={self._executor_threads}')
@@ -367,12 +397,14 @@ class CamImuSyncNode(Node):
             f'  resampled_imu: enabled={self._enable_resampled_imu}  '
             f'rate={self._resampled_imu_rate_hz:.1f} Hz  '
             f'latency={self._resampled_imu_latency_ms:.1f} ms  '
-            f'max_gap={self._resampled_imu_max_gap_ms:.1f} ms')
+            f'max_gap={self._resampled_imu_max_gap_ms:.1f} ms  '
+            f'threaded={self._resampled_imu_threaded_publish}')
         self.get_logger().info(
             f'  batch_imu: enabled={self._publish_batch_imu}')
         if self._debug_enable:
             self.get_logger().info(
-                '  DEBUG: ROS2 terminal/logger structured diagnostics enabled')
+                '  DEBUG: ROS2 terminal/logger structured diagnostics '
+                f'enabled  trace_samples={self._debug_trace_samples}')
         else:
             self.get_logger().info('  DEBUG: disabled')
 
@@ -388,7 +420,10 @@ class CamImuSyncNode(Node):
         # ── QoS ──────────────────────────────────────────────────────
         reliable_qos = _reliable_qos(10)
         best_effort_qos = _best_effort_qos(self._legacy_imu_qos_depth)
-        raw_hw_qos = _reliable_qos(self._raw_hw_qos_depth)
+        raw_hw_qos = _sensor_qos(
+            self._raw_hw_qos_depth,
+            self._raw_hw_qos_reliability,
+        )
 
         # ── subscriptions ────────────────────────────────────────────
         self._img_sub = self.create_subscription(
@@ -424,7 +459,8 @@ class CamImuSyncNode(Node):
                 raw_hw_qos, callback_group=imu_raw_cg)
             self.get_logger().info(
                 f'  [Phase 1A] subscribed to {imu_raw_hw_topic} '
-                f'(RELIABLE keep_last={self._raw_hw_qos_depth})')
+                f'({self._raw_hw_qos_reliability} '
+                f'keep_last={self._raw_hw_qos_depth})')
         else:
             self._imu_raw_sub = None
 
@@ -439,7 +475,17 @@ class CamImuSyncNode(Node):
         # ── drain timer (200 Hz → 5 ms) ─────────────────────────────
         self._drain_timer = self.create_timer(
             0.005, self._drain, callback_group=timer_cg)
-        if self._enable_resampled_imu:
+        self._resample_stop_event = threading.Event()
+        self._resample_thread = None
+        if self._enable_resampled_imu and self._resampled_imu_threaded_publish:
+            self._resample_timer = None
+            self._resample_thread = threading.Thread(
+                target=self._resample_loop,
+                name='cam_imu_sync_resampler',
+                daemon=True,
+            )
+            self._resample_thread.start()
+        elif self._enable_resampled_imu:
             self._resample_timer = self.create_timer(
                 1.0 / self._resampled_imu_rate_hz,
                 self._publish_resampled_imu,
@@ -537,11 +583,10 @@ class CamImuSyncNode(Node):
             hw_ts_unit_sec=msg.hw_ts_unit_sec,
         )
 
+        self._push_resample_sample_from_raw(msg)
         imu_id = self._manager.on_imu_raw(raw, now)
 
         if imu_id > 0:
-            self._push_resample_sample_from_raw(msg)
-
             # ── first-sample milestone ──
             if self._first_imu_steady_ns == 0:
                 self._first_imu_steady_ns = msg.rx_steady_ns
@@ -554,20 +599,20 @@ class CamImuSyncNode(Node):
                 self._imu_period_stats.update(period_ms)
             self._last_imu_steady_ns = msg.rx_steady_ns
 
-            # ── CSV event ──
-            self._diag.imu_rx(
-                imu_id=imu_id,
-                imu_header_ns=msg.rx_steady_ns,  # use steady as "header"
-                steady_ns=msg.rx_steady_ns,
-                queue_depth=self._manager.imu_buf_depth,
-                ax=msg.linear_acceleration.x,
-                ay=msg.linear_acceleration.y,
-                az=msg.linear_acceleration.z,
-                gx=msg.angular_velocity.x,
-                gy=msg.angular_velocity.y,
-                gz=msg.angular_velocity.z,
-                extra=f'tid={msg.tid}',
-            )
+            if self._debug_trace_samples:
+                self._diag.imu_rx(
+                    imu_id=imu_id,
+                    imu_header_ns=msg.rx_steady_ns,
+                    steady_ns=msg.rx_steady_ns,
+                    queue_depth=self._manager.imu_buf_depth,
+                    ax=msg.linear_acceleration.x,
+                    ay=msg.linear_acceleration.y,
+                    az=msg.linear_acceleration.z,
+                    gx=msg.angular_velocity.x,
+                    gy=msg.angular_velocity.y,
+                    gz=msg.angular_velocity.z,
+                    extra=f'tid={msg.tid}',
+                )
 
         # ── legacy IMU frequency tracking ──
         self._imu_recv_count += 1
@@ -610,19 +655,19 @@ class CamImuSyncNode(Node):
                 self._imu_period_stats.update(period_ms)
             self._last_imu_steady_ns = steady_ns
 
-            # ── CSV event ──
-            self._diag.imu_rx(
-                imu_id=imu_id,
-                imu_header_ns=header_ns,
-                steady_ns=steady_ns,
-                queue_depth=self._manager.imu_buf_depth,
-                ax=msg.linear_acceleration.x,
-                ay=msg.linear_acceleration.y,
-                az=msg.linear_acceleration.z,
-                gx=msg.angular_velocity.x,
-                gy=msg.angular_velocity.y,
-                gz=msg.angular_velocity.z,
-            )
+            if self._debug_trace_samples:
+                self._diag.imu_rx(
+                    imu_id=imu_id,
+                    imu_header_ns=header_ns,
+                    steady_ns=steady_ns,
+                    queue_depth=self._manager.imu_buf_depth,
+                    ax=msg.linear_acceleration.x,
+                    ay=msg.linear_acceleration.y,
+                    az=msg.linear_acceleration.z,
+                    gx=msg.angular_velocity.x,
+                    gy=msg.angular_velocity.y,
+                    gz=msg.angular_velocity.z,
+                )
 
         # ── legacy IMU frequency tracking ──
         self._imu_recv_count += 1
@@ -665,13 +710,13 @@ class CamImuSyncNode(Node):
                 self._cam_period_stats.update(period_ms)
             self._last_cam_steady_ns = steady_ns
 
-            # ── CSV event ──
-            self._diag.cam_rx(
-                cam_frame_id=cam_frame_id,
-                cam_header_ns=header_ns,
-                steady_ns=steady_ns,
-                queue_depth=self._manager.img_queue_depth,
-            )
+            if self._debug_trace_samples:
+                self._diag.cam_rx(
+                    cam_frame_id=cam_frame_id,
+                    cam_header_ns=header_ns,
+                    steady_ns=steady_ns,
+                    queue_depth=self._manager.img_queue_depth,
+                )
 
     def _push_resample_sample_from_raw(self, msg) -> None:
         """Store a raw IMU sample in the fixed-rate resampler buffer."""
@@ -740,7 +785,7 @@ class CamImuSyncNode(Node):
         )
         self._resampled_imu_pub.publish(out)
         self._resampled_imu_published += 1
-        if self._debug_enable:
+        if self._debug_trace_samples:
             self._diag.resampled_imu(
                 steady_ns=_time.monotonic_ns(),
                 target_steady_ns=outcome.point.target_steady_ns,
@@ -757,6 +802,23 @@ class CamImuSyncNode(Node):
                 gy=outcome.point.ang_vel[1],
                 gz=outcome.point.ang_vel[2],
             )
+
+    def _resample_loop(self) -> None:
+        """Publish fixed-rate IMU from a dedicated monotonic-time thread."""
+        period_sec = 1.0 / self._resampled_imu_rate_hz
+        next_time = _time.monotonic() + period_sec
+        while not self._resample_stop_event.wait(
+                max(0.0, next_time - _time.monotonic())):
+            try:
+                self._publish_resampled_imu()
+            except Exception as e:
+                if rclpy.ok():
+                    self.get_logger().error(
+                        f'Resample thread publish failed: {e}')
+            next_time += period_sec
+            now = _time.monotonic()
+            if next_time < now:
+                next_time = now + period_sec
 
     def _drain(self) -> None:
         """Process queued images when enough IMU data is available."""
@@ -836,25 +898,26 @@ class CamImuSyncNode(Node):
                 batch.cam_steady_ns - imu_last_sns
                 if imu_last_sns else 0)
 
-            self._diag.sync_out(
-                sync_frame_id=self._manager.stats.synced_frames,
-                cam_frame_id=batch.cam_frame_id,
-                cam_header_ns=batch.cam_header_ns,
-                cam_steady_ns=batch.cam_steady_ns,
-                sync_decision_steady_ns=decision_ns,
-                publish_steady_ns=publish_ns,
-                imu_first_id=imu_first_id,
-                imu_last_id=imu_last_id,
-                imu_count=len(batch.imu_msgs),
-                imu_first_steady_ns=imu_first_sns,
-                imu_last_steady_ns=imu_last_sns,
-                interp_used=batch.interp_used,
-                target_align_ns=target_align_ns,
-                applied_offset_ns=applied_offset_ns,
-                cam_minus_imu_last_ns=cam_minus_imu_last_ns,
-                target_align_steady_ns=target_align_steady_ns,
-                applied_steady_offset_ns=applied_steady_offset_ns,
-            )
+            if self._debug_trace_samples:
+                self._diag.sync_out(
+                    sync_frame_id=self._manager.stats.synced_frames,
+                    cam_frame_id=batch.cam_frame_id,
+                    cam_header_ns=batch.cam_header_ns,
+                    cam_steady_ns=batch.cam_steady_ns,
+                    sync_decision_steady_ns=decision_ns,
+                    publish_steady_ns=publish_ns,
+                    imu_first_id=imu_first_id,
+                    imu_last_id=imu_last_id,
+                    imu_count=len(batch.imu_msgs),
+                    imu_first_steady_ns=imu_first_sns,
+                    imu_last_steady_ns=imu_last_sns,
+                    interp_used=batch.interp_used,
+                    target_align_ns=target_align_ns,
+                    applied_offset_ns=applied_offset_ns,
+                    cam_minus_imu_last_ns=cam_minus_imu_last_ns,
+                    target_align_steady_ns=target_align_steady_ns,
+                    applied_steady_offset_ns=applied_steady_offset_ns,
+                )
 
             # ── sync-latency tracking ──
             if batch.cam_steady_ns > 0:
@@ -994,6 +1057,8 @@ class CamImuSyncNode(Node):
                 f'{self._resampled_imu_latency_ms:.3f}',
             'resampled_imu_max_gap_ms':
                 f'{self._resampled_imu_max_gap_ms:.3f}',
+            'resampled_imu_threaded_publish':
+                self._resampled_imu_threaded_publish,
             'publish_batch_imu': self._publish_batch_imu,
             'batch_imu_topic': self._batch_imu_topic,
             'ros_minus_steady_offset':
@@ -1008,6 +1073,9 @@ class CamImuSyncNode(Node):
 
     def destroy_node(self) -> None:
         """Write summary and close diagnostics before shutdown."""
+        self._resample_stop_event.set()
+        if self._resample_thread is not None:
+            self._resample_thread.join(timeout=2.0)
         try:
             self._write_run_summary()
             self._diag.close()
