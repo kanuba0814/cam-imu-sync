@@ -3,7 +3,7 @@
 Current blocker:
 
 - `docker exec` was rejected by the approval reviewer due usage limit.
-- Last checked at `2026-05-15 06:56 JST`, before the retry window reported as
+- Last checked at `2026-05-15 06:58 JST`, before the retry window reported as
   `10:28 AM`.
 
 Do not change behavior before executing this sequence. The current candidate is
@@ -11,7 +11,7 @@ already committed:
 
 - wrapper: `61d405e fix: keep H30 visual recovery beyond fixed replay`
 - ORB core: `a5ea5b1 fix: allow delaying monocular IMU initialization`
-- evidence: `debug_runs/fix_until_stable/131_...` through `141_...`
+- evidence: `debug_runs/fix_until_stable/131_...` through `142_...`
 
 ## 1. Build wrapper in the authoritative ROS2 container
 
