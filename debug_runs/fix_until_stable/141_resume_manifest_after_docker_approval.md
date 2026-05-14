@@ -11,7 +11,7 @@ already committed:
 
 - wrapper: `61d405e fix: keep H30 visual recovery beyond fixed replay`
 - ORB core: `a5ea5b1 fix: allow delaying monocular IMU initialization`
-- evidence: `debug_runs/fix_until_stable/100_...` through `142_...`
+- evidence: `debug_runs/fix_until_stable/90_...` through `142_...`
 
 ## 1. Build wrapper in the authoritative ROS2 container
 
