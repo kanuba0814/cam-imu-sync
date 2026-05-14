@@ -85,7 +85,7 @@ With `Camera.fps: 30`, ORB's frame-window parameters are inflated by about 3.2x 
 The validation entrypoint must remain the ROS 2 wrapper path because the final runtime is ROS 2:
 
 ```bash
-python3 extra_ws/src/ORB_SLAM3_ROS2/tools/run_stability_replay.py --runs 3 --label <label> --timeout-sec 180
+python3 extra_ws/src/ORB_SLAM3_ROS2/tools/run_stability_replay.py --runs 3 --label <label> --timeout-sec 210
 ```
 
 That runner launches:
@@ -95,6 +95,8 @@ ros2 launch orb_slam3_ros2 h30_bag_replay.launch.py
 ```
 
 So the next config test must be made in `extra_ws/src/ORB_SLAM3_ROS2/config/Monocular-Inertial/rmoncam_h30.yaml`, rebuilt in `autoware_env_v2_host`, then replayed three times through the wrapper.
+
+`--timeout-sec 210` is required for full-bag replay. Later timeout preflight evidence rejected `180` seconds as too short for this fixed bag plus launch delay.
 
 ## Next minimal change
 
