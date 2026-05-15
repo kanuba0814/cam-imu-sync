@@ -63,3 +63,29 @@ start_offset_sec: 0.0
 This is harness-only hardening. It does not change ORB-SLAM3 or wrapper runtime
 behavior, but it prevents the final evidence parser from accepting a low-quality
 ROS2 pose publish as valid.
+
+## Actual Log Spot Check
+
+After the parser hardening commit, the previous experiment 29 logs were
+reparsed with the new code:
+
+```bash
+python3 extra_ws/src/ORB_SLAM3_ROS2/tools/parse_runtime_orb_log.py \
+  extra_ws/debug_runs/fix_until_stable/29_postinit_inliers5_wrapper_pose_gate_full_window_run01.log
+python3 extra_ws/src/ORB_SLAM3_ROS2/tools/parse_runtime_orb_log.py \
+  extra_ws/debug_runs/fix_until_stable/29_postinit_inliers5_wrapper_pose_gate_full_window_run02.log
+python3 extra_ws/src/ORB_SLAM3_ROS2/tools/parse_runtime_orb_log.py \
+  extra_ws/debug_runs/fix_until_stable/29_postinit_inliers5_wrapper_pose_gate_full_window_run03.log
+```
+
+Result summary:
+
+| Run | Stability pass | Invalid pose publishes | Reset after init | OK ratio |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | `true` | `0` | `0` | `0.9143192488262911` |
+| 2 | `false` | `0` | `1` | `0.600451467268623` |
+| 3 | `false` | `0` | `0` | `0.8645598194130926` |
+
+The hardened parser does not change the known experiment 29 diagnosis: wrapper
+pose publication was not the remaining failure cause; the remaining failures
+were stability metrics such as reset-after-init and OK ratio.
