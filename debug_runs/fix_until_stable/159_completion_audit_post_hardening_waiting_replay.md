@@ -10,7 +10,7 @@ explanation-only artifacts.
 
 ## Current Candidate Under Audit
 
-- Wrapper repo HEAD: `9bb9251 test: reject low-quality H30 pose publishes`
+- Wrapper repo HEAD: `b9f5b58 test: reject missing-pose H30 publishes`
 - Current H30 behavior candidate:
   `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - ORB core HEAD: `a5ea5b1 fix: allow delaying monocular IMU initialization`
@@ -36,6 +36,7 @@ explanation-only artifacts.
 | Final commands are rerunnable in the intended environment | `831d73c` makes `final_commands.md` include the containerized build command, containerized replay harness command, and per-run inner ROS2 launch commands. | Satisfied by harness |
 | Timeout evidence is visible in replay summaries | `d601e21` writes `timed_out` and `timeout_sec` into the replay aggregate CSV and Markdown, not only per-run JSON. | Satisfied by harness |
 | Runtime pose evidence rejects low-quality publishes | `9bb9251` makes `invalid_pose_publish_count` include any published pose with non-OK state, non-`ok` reason, missing quality fields, `num_inliers < 15`, or `num_tracked_mappoints < 15`. | Satisfied by harness |
+| Runtime pose evidence rejects missing-pose publishes | `b9f5b58` makes `invalid_pose_publish_count` include any published pose with missing or false `has_pose`. | Satisfied by harness |
 | Final gate rejects fake pose publishing | Parser counts `invalid_pose_publish_count`; final gate requires `0`. | Satisfied by harness |
 | IMU initialized is not accepted alone | Final gate additionally requires reset, OK ratio, lost streak, keyframes, map points, inliers, IMU timing, image age, queue/backlog, and invalid pose gates. | Satisfied by harness |
 | Consecutive 3 offline wrapper replays pass | `30_postinit_inliers0_wrapper_pose_gate_full_window.json` does not exist. | Missing |
