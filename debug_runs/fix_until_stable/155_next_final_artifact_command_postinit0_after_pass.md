@@ -44,6 +44,7 @@ python3 extra_ws/src/ORB_SLAM3_ROS2/tools/generate_final_stability_artifacts.py 
   --excluded-hypothesis "offset/Tbc/IMU units/QoS alone: earlier audits did not explain continued resets on the fixed sync-only bag" \
   --excluded-hypothesis "nFeatures alone: 1200 features improved initialization evidence but earlier replays still reset or became recently lost" \
   --excluded-hypothesis "queue backlog alone: bounded queues and stale-frame gates are required safety fixes, but prior fresh-age runs still failed reset gates" \
+  --excluded-hypothesis "LocalMapping backlog alone: final gates require keyframes, map points, queue/backlog stability, and no reset-after-init evidence before accepting the candidate" \
   --excluded-hypothesis "pose fake publishing: publish gating prevents false odom/tf, but does not by itself create stable mapping" \
   --excluded-hypothesis "pre-BA2 visual optimization toggle and min-scale/preinit-inlier thresholds: earlier experiments failed and were reverted or excluded" \
   --excluded-hypothesis "finite FramesToResetIMU=90 and zero FramesToResetIMU=0: earlier experiments showed crash-at-gate versus immediate IMU-prediction reset loop" \
