@@ -2,7 +2,7 @@
 
 ## Current Candidate
 
-- ORB_SLAM3_ROS2 HEAD: `d601e21 test: report H30 replay timeout evidence in aggregate`
+- ORB_SLAM3_ROS2 HEAD: `9bb9251 test: reject low-quality H30 pose publishes`
 - H30 behavior candidate: `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - Replay harness hardening:
   `run_stability_replay.py` launches each ROS2 wrapper replay in its own
@@ -21,6 +21,9 @@
   containerized replay harness command, and per-run inner ROS2 launch commands.
   It also writes per-run `timed_out` and `timeout_sec` values into the replay
   aggregate CSV/Markdown, not only JSON.
+  It also makes the runtime parser count a published pose as invalid when the
+  pose gate reports OK state but inliers or tracked map points below the final
+  15/15 wrapper trust gate.
 - Config under test:
   - `Tracking.MinInliersImuMonoPostInit: 0`
   - wrapper pose gate: `min_pose_publish_inliers:=15`

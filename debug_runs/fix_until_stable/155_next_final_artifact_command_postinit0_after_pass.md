@@ -46,6 +46,7 @@ python3 extra_ws/src/ORB_SLAM3_ROS2/tools/generate_final_stability_artifacts.py 
   --kept-commit "ORB_SLAM3_ROS2 c01983b test: summarize H30 final patch evidence" \
   --kept-commit "ORB_SLAM3_ROS2 831d73c test: include container H30 replay commands in final artifacts" \
   --kept-commit "ORB_SLAM3_ROS2 d601e21 test: report H30 replay timeout evidence in aggregate" \
+  --kept-commit "ORB_SLAM3_ROS2 9bb9251 test: reject low-quality H30 pose publishes" \
   --kept-commit "ORB_SLAM3_ROS2 replay/final-gate hardening commits: enforce sync-only latest-bag full-wrapper evidence before accepting final artifacts" \
   --excluded-hypothesis "offset/Tbc/IMU units/QoS alone: earlier audits did not explain continued resets on the fixed sync-only bag" \
   --excluded-hypothesis "nFeatures alone: 1200 features improved initialization evidence but earlier replays still reset or became recently lost" \
