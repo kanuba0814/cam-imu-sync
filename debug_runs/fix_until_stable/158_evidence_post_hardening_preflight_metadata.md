@@ -52,6 +52,10 @@ start_offset_sec: 0.0
 - settings Camera.fps: `9.0`
 - QoS override:
   `/home/gxxl/slam_ws_v2/extra_ws/src/ORB_SLAM3_ROS2/config/bag_qos_override.yaml`
+- installed QoS override:
+  `extra_ws/install/orb_slam3_ros2/share/orb_slam3_ros2/config/bag_qos_override.yaml`
+  is a symlink to the source QoS override, and `cmp -s` confirms both paths
+  match.
 
 ## Conclusion
 
