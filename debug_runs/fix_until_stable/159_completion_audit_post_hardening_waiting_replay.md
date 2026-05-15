@@ -10,7 +10,7 @@ explanation-only artifacts.
 
 ## Current Candidate Under Audit
 
-- Wrapper repo HEAD: `1f33d11 test: cover H30 final stability metric failures`
+- Wrapper repo HEAD: `fd08b28 test: require H30 QoS override topic match`
 - Current H30 behavior candidate:
   `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - ORB core HEAD: `a5ea5b1 fix: allow delaying monocular IMU initialization`

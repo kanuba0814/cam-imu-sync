@@ -46,6 +46,10 @@ harness and final artifact generator reject incomplete final evidence.
   - Adds negative final-gate selftests for OK ratio, lost streak, last-60 reset,
     keyframes, map points, inliers, stale image age, queue growth, and backlog
     failure.
+- `fd08b28 test: require H30 QoS override topic match`
+  - Validates `bag_qos_override.yaml` as YAML and requires its topic keys to
+    exactly match `/sync/image_raw`, `/sync/imu`, and `/sync/imu_batch`.
+  - Records `qos_override_topics` in preflight metadata and the final report.
 
 ## Validation
 

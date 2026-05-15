@@ -2,7 +2,7 @@
 
 ## Current Candidate
 
-- ORB_SLAM3_ROS2 HEAD: `1f33d11 test: cover H30 final stability metric failures`
+- ORB_SLAM3_ROS2 HEAD: `fd08b28 test: require H30 QoS override topic match`
 - H30 behavior candidate: `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - Config under test:
   - `Tracking.MinInliersImuMonoPostInit: 0`
