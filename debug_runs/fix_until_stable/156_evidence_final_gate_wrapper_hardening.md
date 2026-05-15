@@ -42,6 +42,10 @@ harness and final artifact generator reject incomplete final evidence.
   - Adds `controlled_backlog_pass` to the final replay metrics table as
     `Backlog pass`.
   - Extends the final gate selftest to require that report column.
+- `1f33d11 test: cover H30 final stability metric failures`
+  - Adds negative final-gate selftests for OK ratio, lost streak, last-60 reset,
+    keyframes, map points, inliers, stale image age, queue growth, and backlog
+    failure.
 
 ## Validation
 
