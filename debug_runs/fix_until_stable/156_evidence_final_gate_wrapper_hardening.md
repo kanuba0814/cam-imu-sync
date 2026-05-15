@@ -34,6 +34,10 @@ harness and final artifact generator reject incomplete final evidence.
   - Adds `imu_topic_stats` to replay preflight metadata.
   - Makes the final generator reject missing, empty, or non-spanning IMU topic
     evidence.
+- `fc7d5b0 test: report H30 replay topic evidence`
+  - Adds selected image/IMU topic counts and fps spans to the final stability
+    report.
+  - Extends the final gate selftest to require those report fields.
 
 ## Validation
 
