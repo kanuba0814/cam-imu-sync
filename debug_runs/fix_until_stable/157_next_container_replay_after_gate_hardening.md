@@ -2,8 +2,11 @@
 
 ## Current Candidate
 
-- ORB_SLAM3_ROS2 HEAD: `12b1713 test: avoid PyYAML dependency in H30 replay preflight`
+- ORB_SLAM3_ROS2 HEAD: `342ae01 test: clean up timed-out H30 wrapper replays`
 - H30 behavior candidate: `f93a5c7 fix: allow H30 post-init visual dropout survival`
+- Replay harness hardening:
+  `run_stability_replay.py` launches each ROS2 wrapper replay in its own
+  process group and kills the full group on timeout before the next run starts.
 - Config under test:
   - `Tracking.MinInliersImuMonoPostInit: 0`
   - wrapper pose gate: `min_pose_publish_inliers:=15`
