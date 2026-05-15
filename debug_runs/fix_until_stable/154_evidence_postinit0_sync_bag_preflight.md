@@ -88,6 +88,20 @@ publication gates:
 - `min_pose_publish_inliers`
 - `min_pose_publish_tracked_mappoints`
 
+## Final Gate Selftest
+
+The guarded final artifact/selftest path was also checked locally without
+launching ROS:
+
+```text
+preflight: ignoring non-replay bag topics: /image_raw, /imu/data_raw, /imu/raw_hw
+final stability gate selftest passed
+```
+
+This confirms the final artifact generator still validates the latest fixed
+bag, sync-only replay metadata, full-bag start offset, three passing runs, and
+required output artifact names before accepting a replay aggregate.
+
 ## Decision
 
 The local preflight is consistent with the goal constraints and the current
