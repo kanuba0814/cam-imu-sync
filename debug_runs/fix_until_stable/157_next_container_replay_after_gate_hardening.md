@@ -2,13 +2,14 @@
 
 ## Current Candidate
 
-- ORB_SLAM3_ROS2 HEAD: `067c63e test: reject timed-out H30 final replays`
+- ORB_SLAM3_ROS2 HEAD: `665c6dd test: show H30 pass and timeout evidence in final report`
 - H30 behavior candidate: `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - Replay harness hardening:
   `run_stability_replay.py` launches each ROS2 wrapper replay in its own
   process group and kills the full group on timeout before the next run starts.
   `generate_final_stability_artifacts.py` requires every accepted run to record
-  `timed_out: false`.
+  `timed_out: false` and shows each run's pass/timeout values in the final
+  report table.
 - Config under test:
   - `Tracking.MinInliersImuMonoPostInit: 0`
   - wrapper pose gate: `min_pose_publish_inliers:=15`

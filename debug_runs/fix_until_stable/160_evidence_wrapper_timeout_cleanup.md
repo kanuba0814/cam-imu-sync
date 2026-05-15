@@ -13,6 +13,8 @@ prevents that failure mode before the next container replay.
   `342ae01 test: clean up timed-out H30 wrapper replays`
 - final gate commit:
   `067c63e test: reject timed-out H30 final replays`
+- final report commit:
+  `665c6dd test: show H30 pass and timeout evidence in final report`
 - changed file:
   `extra_ws/src/ORB_SLAM3_ROS2/tools/run_stability_replay.py`
 - behavior:
@@ -24,6 +26,10 @@ prevents that failure mode before the next container replay.
   `generate_final_stability_artifacts.py` rejects any run missing `timed_out`
   or reporting `timed_out: true`; `selftest_final_stability_gates.py` covers
   both rejection cases.
+- final report behavior:
+  `final_stability_report.md` includes per-run `Pass` and `Timed out` table
+  columns so the report itself shows the consecutive accepted replays did not
+  time out.
 
 This does not change ORB behavior, wrapper launch arguments, selected topics,
 QoS overrides, or runtime stability thresholds.
