@@ -2,7 +2,7 @@
 
 ## Current Candidate
 
-- ORB_SLAM3_ROS2 HEAD: `07f23ff test: include H30 config snapshot in final report`
+- ORB_SLAM3_ROS2 HEAD: `170bd3a test: require H30 excluded hypothesis coverage`
 - H30 behavior candidate: `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - Replay harness hardening:
   `run_stability_replay.py` launches each ROS2 wrapper replay in its own
@@ -12,6 +12,9 @@
   report table.
   It also includes a key H30 settings snapshot in the final report so the final
   config is visible without opening `best_config.yaml`.
+  It requires the final excluded-hypothesis list to cover offset, Tbc, IMU
+  units, QoS, nFeatures, queue backlog, LocalMapping backlog, and pose fake
+  publishing.
 - Config under test:
   - `Tracking.MinInliersImuMonoPostInit: 0`
   - wrapper pose gate: `min_pose_publish_inliers:=15`
