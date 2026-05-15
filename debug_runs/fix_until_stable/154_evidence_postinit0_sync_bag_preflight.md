@@ -74,6 +74,20 @@ The current H30 YAML contains:
 - `Tracking.ResetActiveMapBeforeInertialBA2: 0`
 - `Tracking.MinInliersImuMonoPostInit: 0`
 
+The installed H30 config path resolves back to the source YAML, so the installed
+launch will read the current candidate config:
+
+```text
+extra_ws/install/orb_slam3_ros2/share/orb_slam3_ros2/config/Monocular-Inertial/rmoncam_h30.yaml
+-> /home/gxxl/slam_ws_v2/extra_ws/src/ORB_SLAM3_ROS2/config/Monocular-Inertial/rmoncam_h30.yaml
+```
+
+The installed `h30_bag_replay.launch.py` also contains the 15/15 wrapper pose
+publication gates:
+
+- `min_pose_publish_inliers`
+- `min_pose_publish_tracked_mappoints`
+
 ## Decision
 
 The local preflight is consistent with the goal constraints and the current
