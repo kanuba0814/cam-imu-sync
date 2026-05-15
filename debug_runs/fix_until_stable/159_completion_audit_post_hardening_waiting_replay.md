@@ -10,7 +10,7 @@ explanation-only artifacts.
 
 ## Current Candidate Under Audit
 
-- Wrapper repo HEAD: `342ae01 test: clean up timed-out H30 wrapper replays`
+- Wrapper repo HEAD: `067c63e test: reject timed-out H30 final replays`
 - Current H30 behavior candidate:
   `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - ORB core HEAD: `a5ea5b1 fix: allow delaying monocular IMU initialization`
@@ -29,7 +29,7 @@ explanation-only artifacts.
 | ROS2 wrapper path, not standalone ORB | Final generator requires `ros2 launch orb_slam3_ros2 h30_bag_replay.launch.py`. | Satisfied by harness |
 | Explicit wrapper pose protection | `run_stability_replay.py` now passes `min_pose_publish_inliers:=15` and `min_pose_publish_tracked_mappoints:=15`; final generator rejects missing or altered values. | Satisfied by harness |
 | QoS override topic names match sync bag topics | `fd08b28` makes preflight parse `bag_qos_override.yaml` and require exactly `/sync/image_raw`, `/sync/imu`, `/sync/imu_batch`. | Satisfied by harness |
-| Timeout cleanup cannot contaminate later runs | `342ae01` runs each ROS2 wrapper replay in a new process group and kills that group on timeout before parsing/writing run evidence. | Satisfied by harness |
+| Timeout cleanup cannot contaminate later runs | `342ae01` runs each ROS2 wrapper replay in a new process group and kills that group on timeout before parsing/writing run evidence. `067c63e` makes final artifacts reject missing or true `timed_out` evidence. | Satisfied by harness |
 | Final gate rejects fake pose publishing | Parser counts `invalid_pose_publish_count`; final gate requires `0`. | Satisfied by harness |
 | IMU initialized is not accepted alone | Final gate additionally requires reset, OK ratio, lost streak, keyframes, map points, inliers, IMU timing, image age, queue/backlog, and invalid pose gates. | Satisfied by harness |
 | Consecutive 3 offline wrapper replays pass | `30_postinit_inliers0_wrapper_pose_gate_full_window.json` does not exist. | Missing |

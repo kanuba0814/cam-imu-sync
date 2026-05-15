@@ -39,6 +39,7 @@ python3 extra_ws/src/ORB_SLAM3_ROS2/tools/generate_final_stability_artifacts.py 
   --kept-commit "ORB_SLAM3_ROS2 fd08b28 test: require H30 QoS override topic match" \
   --kept-commit "ORB_SLAM3_ROS2 12b1713 test: avoid PyYAML dependency in H30 replay preflight" \
   --kept-commit "ORB_SLAM3_ROS2 342ae01 test: clean up timed-out H30 wrapper replays" \
+  --kept-commit "ORB_SLAM3_ROS2 067c63e test: reject timed-out H30 final replays" \
   --kept-commit "ORB_SLAM3_ROS2 replay/final-gate hardening commits: enforce sync-only latest-bag full-wrapper evidence before accepting final artifacts" \
   --excluded-hypothesis "offset/Tbc/IMU units/QoS alone: earlier audits did not explain continued resets on the fixed sync-only bag" \
   --excluded-hypothesis "nFeatures alone: 1200 features improved initialization evidence but earlier replays still reset or became recently lost" \

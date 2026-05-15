@@ -11,6 +11,8 @@ prevents that failure mode before the next container replay.
 
 - wrapper repo commit:
   `342ae01 test: clean up timed-out H30 wrapper replays`
+- final gate commit:
+  `067c63e test: reject timed-out H30 final replays`
 - changed file:
   `extra_ws/src/ORB_SLAM3_ROS2/tools/run_stability_replay.py`
 - behavior:
@@ -18,9 +20,13 @@ prevents that failure mode before the next container replay.
   harness sends `SIGTERM` to the whole process group, escalates to `SIGKILL`
   after 10 seconds if needed, then writes `timed_out` and `timeout_sec` into the
   run JSON.
+- final artifact gate behavior:
+  `generate_final_stability_artifacts.py` rejects any run missing `timed_out`
+  or reporting `timed_out: true`; `selftest_final_stability_gates.py` covers
+  both rejection cases.
 
 This does not change ORB behavior, wrapper launch arguments, selected topics,
-QoS overrides, or stability gates.
+QoS overrides, or runtime stability thresholds.
 
 ## Verification
 
