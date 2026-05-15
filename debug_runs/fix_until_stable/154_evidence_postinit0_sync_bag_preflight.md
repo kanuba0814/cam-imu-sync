@@ -55,6 +55,15 @@ The harness explicitly bans selecting or replaying:
 - `/imu/data_raw`
 - `/imu/raw_hw`
 
+The harness `--preflight-only` path also passed without launching ROS:
+
+```text
+preflight: ignoring non-replay bag topics: /image_raw, /imu/data_raw, /imu/raw_hw
+preflight passed for /home/gxxl/slam_ws_v2/bags/goalDebug/h30_sync_raw_20260512_172136
+replay_topics: /sync/image_raw,/sync/imu
+start_offset_sec: 0.0
+```
+
 ## Candidate Config
 
 The current H30 YAML contains:
