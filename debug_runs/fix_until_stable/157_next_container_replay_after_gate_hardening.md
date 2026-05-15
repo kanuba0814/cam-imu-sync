@@ -2,7 +2,7 @@
 
 ## Current Candidate
 
-- ORB_SLAM3_ROS2 HEAD: `fc7d5b0 test: report H30 replay topic evidence`
+- ORB_SLAM3_ROS2 HEAD: `aa165dc test: report H30 backlog gate in final metrics`
 - H30 behavior candidate: `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - Config under test:
   - `Tracking.MinInliersImuMonoPostInit: 0`
