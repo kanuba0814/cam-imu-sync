@@ -36,6 +36,7 @@ start_offset_sec: 0.0
 - selected image topic: `/sync/image_raw`
 - selected IMU topic: `/sync/imu`
 - replay topics: `/sync/image_raw,/sync/imu`
+- QoS override topics: `/sync/image_raw`, `/sync/imu`, `/sync/imu_batch`
 - ignored non-replay topics: `/image_raw`, `/imu/data_raw`, `/imu/raw_hw`
 - `/sync/image_raw` count: `1668`
 - `/sync/image_raw` fps_span: `9.274295544564222`
@@ -56,5 +57,6 @@ start_offset_sec: 0.0
 
 The current preflight metadata satisfies the final artifact generator's
 sync-only latest-bag checks and has enough timeout margin for full-bag replay.
-This is not behavior validation; the required containerized 3-run ROS2 wrapper
-replay has not run yet.
+It also satisfies the QoS override topic-name gate. This is not behavior
+validation; the required containerized 3-run ROS2 wrapper replay has not run
+yet.

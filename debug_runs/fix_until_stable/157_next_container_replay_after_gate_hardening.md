@@ -58,6 +58,7 @@ Do not accept the result unless the aggregate shows:
 - every run used `/sync/image_raw` and `/sync/imu`
 - every run used `min_pose_publish_inliers:=15`
 - every run used `min_pose_publish_tracked_mappoints:=15`
+- preflight recorded QoS override topics exactly as `/sync/image_raw`, `/sync/imu`, `/sync/imu_batch`
 - `invalid_pose_publish_count=0`
 - `reset_count_after_init=0`
 - `ok_ratio_after_init >= 0.90`
