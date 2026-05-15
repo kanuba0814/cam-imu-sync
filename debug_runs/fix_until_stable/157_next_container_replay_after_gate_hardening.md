@@ -2,7 +2,7 @@
 
 ## Current Candidate
 
-- ORB_SLAM3_ROS2 HEAD: `fd08b28 test: require H30 QoS override topic match`
+- ORB_SLAM3_ROS2 HEAD: `12b1713 test: avoid PyYAML dependency in H30 replay preflight`
 - H30 behavior candidate: `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - Config under test:
   - `Tracking.MinInliersImuMonoPostInit: 0`

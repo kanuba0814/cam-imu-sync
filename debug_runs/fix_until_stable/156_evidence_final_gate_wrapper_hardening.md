@@ -50,6 +50,10 @@ harness and final artifact generator reject incomplete final evidence.
   - Validates `bag_qos_override.yaml` as YAML and requires its topic keys to
     exactly match `/sync/image_raw`, `/sync/imu`, and `/sync/imu_batch`.
   - Records `qos_override_topics` in preflight metadata and the final report.
+- `12b1713 test: avoid PyYAML dependency in H30 replay preflight`
+  - Replaces the PyYAML dependency with a small top-level topic parser for the
+    QoS override file so container replay preflight does not depend on an
+    optional Python module.
 
 ## Validation
 
