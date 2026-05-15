@@ -2,7 +2,7 @@
 
 ## Current Candidate
 
-- ORB_SLAM3_ROS2 HEAD: `170bd3a test: require H30 excluded hypothesis coverage`
+- ORB_SLAM3_ROS2 HEAD: `c01983b test: summarize H30 final patch evidence`
 - H30 behavior candidate: `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - Replay harness hardening:
   `run_stability_replay.py` launches each ROS2 wrapper replay in its own
@@ -15,6 +15,8 @@
   It requires the final excluded-hypothesis list to cover offset, Tbc, IMU
   units, QoS, nFeatures, queue backlog, LocalMapping backlog, and pose fake
   publishing.
+  It also makes `final_patch_summary.md` include the accepted replay evidence,
+  kept changes, excluded hypotheses, and remaining risks.
 - Config under test:
   - `Tracking.MinInliersImuMonoPostInit: 0`
   - wrapper pose gate: `min_pose_publish_inliers:=15`

@@ -10,7 +10,7 @@ explanation-only artifacts.
 
 ## Current Candidate Under Audit
 
-- Wrapper repo HEAD: `170bd3a test: require H30 excluded hypothesis coverage`
+- Wrapper repo HEAD: `c01983b test: summarize H30 final patch evidence`
 - Current H30 behavior candidate:
   `f93a5c7 fix: allow H30 post-init visual dropout survival`
 - ORB core HEAD: `a5ea5b1 fix: allow delaying monocular IMU initialization`
@@ -32,6 +32,7 @@ explanation-only artifacts.
 | Timeout cleanup cannot contaminate later runs | `342ae01` runs each ROS2 wrapper replay in a new process group and kills that group on timeout before parsing/writing run evidence. `067c63e` makes final artifacts reject missing or true `timed_out` evidence; `665c6dd` shows pass/timeout values in the final report table. | Satisfied by harness |
 | Final report includes final config values | `07f23ff` adds a `Config Snapshot` section with the key camera, ORBextractor, IMU, Tracking, and LocalMapping settings. | Satisfied by harness |
 | Final report covers required excluded hypotheses | `170bd3a` rejects final artifact generation unless the excluded-hypothesis list covers offset, Tbc, IMU units, QoS, nFeatures, queue backlog, LocalMapping backlog, and pose fake publishing. | Satisfied by harness |
+| Final patch summary is not a placeholder | `c01983b` makes `final_patch_summary.md` include accepted replay evidence, kept changes, excluded hypotheses, and remaining risks. | Satisfied by harness |
 | Final gate rejects fake pose publishing | Parser counts `invalid_pose_publish_count`; final gate requires `0`. | Satisfied by harness |
 | IMU initialized is not accepted alone | Final gate additionally requires reset, OK ratio, lost streak, keyframes, map points, inliers, IMU timing, image age, queue/backlog, and invalid pose gates. | Satisfied by harness |
 | Consecutive 3 offline wrapper replays pass | `30_postinit_inliers0_wrapper_pose_gate_full_window.json` does not exist. | Missing |
