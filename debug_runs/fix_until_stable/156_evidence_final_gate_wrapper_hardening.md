@@ -38,6 +38,10 @@ harness and final artifact generator reject incomplete final evidence.
   - Adds selected image/IMU topic counts and fps spans to the final stability
     report.
   - Extends the final gate selftest to require those report fields.
+- `aa165dc test: report H30 backlog gate in final metrics`
+  - Adds `controlled_backlog_pass` to the final replay metrics table as
+    `Backlog pass`.
+  - Extends the final gate selftest to require that report column.
 
 ## Validation
 
