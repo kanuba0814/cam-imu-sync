@@ -32,6 +32,7 @@ python3 extra_ws/src/ORB_SLAM3_ROS2/tools/generate_final_stability_artifacts.py 
   --kept-commit "ORB_SLAM3_ROS2 f93a5c7 fix: allow H30 post-init visual dropout survival" \
   --kept-commit "ORB_SLAM3_ROS2 20e2fff test: gate H30 IMU window median timing" \
   --kept-commit "ORB_SLAM3_ROS2 80567ea test: require explicit H30 wrapper pose gates" \
+  --kept-commit "ORB_SLAM3_ROS2 be3fd27 test: require H30 replay IMU topic evidence" \
   --kept-commit "ORB_SLAM3_ROS2 replay/final-gate hardening commits: enforce sync-only latest-bag full-wrapper evidence before accepting final artifacts" \
   --excluded-hypothesis "offset/Tbc/IMU units/QoS alone: earlier audits did not explain continued resets on the fixed sync-only bag" \
   --excluded-hypothesis "nFeatures alone: 1200 features improved initialization evidence but earlier replays still reset or became recently lost" \
