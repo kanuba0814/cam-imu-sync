@@ -1,11 +1,11 @@
-from setuptools import find_packages, setup
+from setuptools import setup
 
 package_name = 'cam_imu_sync'
 
 setup(
     name=package_name,
-    version='0.2.0',
-    packages=find_packages(exclude=['test']),
+    version='0.1.0',
+    packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
@@ -14,7 +14,6 @@ setup(
          ['launch/cam_imu_sync.launch.py']),
     ],
     install_requires=['setuptools'],
-    tests_require=['pytest'],
     zip_safe=True,
     maintainer='gxxl',
     maintainer_email='gxxl@todo.todo',
