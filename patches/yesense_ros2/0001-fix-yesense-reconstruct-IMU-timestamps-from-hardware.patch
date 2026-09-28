@@ -1,0 +1,134 @@
+From b0cfbd3f665e68f3dae7c6174f74fb4696ffc3e0 Mon Sep 17 00:00:00 2001
+From: kanuba0814 <gaixiaxianl@icloud.com>
+Date: Tue, 7 Apr 2026 13:14:40 +0800
+Subject: [PATCH 1/6] fix(yesense): reconstruct IMU timestamps from hardware
+ counters instead of host clock
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Replace `this->get_clock()->now()` with hardware-counter-based timestamp
+reconstruction for sensor_msgs/Imu messages. This eliminates timestamp
+jitter caused by UART buffering, USB batching, and 1ms wall_timer polling.
+
+Strategy (priority order):
+1. sample_timestamp (data_id=0x51) — μs-precision hardware timestamp
+2. tid — per-packet sequence counter (uint16, wraps at ~60000), with
+   explicit wraparound detection and 64-bit extended counter
+3. Fallback to get_clock()->now() if neither is available
+
+New parameters: hw_ts_unit_us (default 1.0), imu_output_rate (default 200.0)
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+---
+ yesense_std_ros2/src/yesense_node.cpp | 58 +++++++++++++++++++++------
+ 1 file changed, 46 insertions(+), 12 deletions(-)
+
+diff --git a/yesense_std_ros2/src/yesense_node.cpp b/yesense_std_ros2/src/yesense_node.cpp
+index accf9dc..601f332 100644
+--- a/yesense_std_ros2/src/yesense_node.cpp
++++ b/yesense_std_ros2/src/yesense_node.cpp
+@@ -115,7 +115,8 @@ class YESENSE_Publisher : public rclcpp::Node
+ 		this->declare_parameter<std::string>("driver_type", "ros_serial");
+ 		this->declare_parameter<std::string>("imu_topic_ros", "imu_data_ros");
+ 		this->declare_parameter<std::string>("imu_topic", "imu_data");
+-		this->declare_parameter<double>("hw_ts_unit_us", 1.0);  // sample_timestamp tick unit in μs (1 or 100)
++		this->declare_parameter<double>("hw_ts_unit_us", 1.0);    // sample_timestamp tick unit in μs (1 or 100)
++		this->declare_parameter<double>("imu_output_rate", 200.0); // IMU output rate in Hz (for tid fallback)
+ 		//this->declare_parameter<std::string>("driver_type", "linux_serial");
+ 		
+ 		std::string driver_type_str,imu_topic_ros,imu_topic;
+@@ -128,6 +129,9 @@ class YESENSE_Publisher : public rclcpp::Node
+ 		double hw_ts_unit_us = 1.0;
+ 		this->get_parameter("hw_ts_unit_us", hw_ts_unit_us);
+ 		hw_ts_unit_sec_ = hw_ts_unit_us * 1e-6;
++		double imu_output_rate = 200.0;
++		this->get_parameter("imu_output_rate", imu_output_rate);
++		tid_interval_sec_ = 1.0 / imu_output_rate;
+ 		RCLCPP_INFO(this->get_logger(), "serial port %s\n", serial_port.c_str());
+ 		RCLCPP_INFO(this->get_logger(), "baudrate %d\n", baud_rate);
+ 		RCLCPP_INFO(this->get_logger(), "frame id %s\n", frame_id.c_str());
+@@ -315,11 +319,16 @@ class YESENSE_Publisher : public rclcpp::Node
+ 	yis_out_data_t yis_out;
+ 	user_info_t user_info;
+ 
+-	// hardware timestamp correction
++	// hardware timestamp correction (sample_timestamp or tid-based fallback)
+ 	bool hw_ts_initialized_ = false;
+ 	double ros_time_base_sec_ = 0.0;   // ROS wall-clock at first sample (seconds)
+-	uint32_t hw_ts_base_ = 0;          // IMU sample_timestamp at first sample
++	uint32_t hw_ts_base_ = 0;          // sample_timestamp at first sample
+ 	double hw_ts_unit_sec_ = 1e-6;     // conversion factor: ticks → seconds (1μs default)
++	double tid_interval_sec_ = 0.005;  // 1/output_rate: default 5ms for 200Hz
++	bool use_tid_fallback_ = false;    // true when sample_timestamp unavailable
++	// tid wraparound handling (tid is uint16, wraps at ~60000)
++	uint64_t tid_total_count_ = 0;     // extended 64-bit sample counter
++	unsigned short tid_prev_ = 0;      // previous tid value for wraparound detection
+ 
+ 	// ros2 original topic
+ 	rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_imu_ros;		
+@@ -361,27 +370,52 @@ void YESENSE_Publisher::publish_msg(yis_out_data_t *result)
+ 	yesense_interface::msg::NavAll			nav_all_data;
+ 
+     // =========== publish imu message ==============
+-    // Use hardware sample_timestamp to reconstruct accurate ROS timestamps,
++    // Reconstruct accurate ROS timestamps from hardware counters,
+     // eliminating UART/USB buffering jitter and polling delay.
++    //
++    // Priority: sample_timestamp (data_id=0x51, uint32) > tid (uint16 sequence)
++    // Map first sample to ROS wall-clock, then advance by counter delta × scale.
+     if (result->content.sample_timestamp) {
++        // Best case: hardware microsecond timestamp
+         uint32_t hw_ts = result->sample_timestamp;
+         if (!hw_ts_initialized_) {
+             ros_time_base_sec_ = this->get_clock()->now().seconds();
+             hw_ts_base_ = hw_ts;
+             hw_ts_initialized_ = true;
+             RCLCPP_INFO(this->get_logger(),
+-                "HW timestamp base established: ros=%.6f hw=%u (unit=%.0f us)",
++                "Timestamp base: ros=%.6f hw=%u mode=sample_timestamp (%.0f us/tick)",
+                 ros_time_base_sec_, hw_ts_base_, hw_ts_unit_sec_ * 1e6);
+         }
+-        // unsigned subtraction handles 32-bit wraparound correctly
+-        uint32_t dt_ticks = hw_ts - hw_ts_base_;
++        uint32_t dt_ticks = hw_ts - hw_ts_base_;  // unsigned wrap-safe
+         double corrected = ros_time_base_sec_ + dt_ticks * hw_ts_unit_sec_;
+-        auto sec  = static_cast<int32_t>(corrected);
+-        auto nsec = static_cast<uint32_t>((corrected - sec) * 1e9);
+-        imu_ros_data.header.stamp.sec = sec;
+-        imu_ros_data.header.stamp.nanosec = nsec;
++        imu_ros_data.header.stamp.sec     = static_cast<int32_t>(corrected);
++        imu_ros_data.header.stamp.nanosec = static_cast<uint32_t>(
++            (corrected - static_cast<int32_t>(corrected)) * 1e9);
++    } else if (result->tid > 0) {
++        // Fallback: use tid (uint16, wraps at ~60000) as sample counter
++        unsigned short tid_now = result->tid;
++        if (!hw_ts_initialized_) {
++            ros_time_base_sec_ = this->get_clock()->now().seconds();
++            tid_prev_ = tid_now;
++            tid_total_count_ = 0;
++            use_tid_fallback_ = true;
++            hw_ts_initialized_ = true;
++            RCLCPP_INFO(this->get_logger(),
++                "Timestamp base: ros=%.6f tid=%u mode=tid (%.1f Hz)",
++                ros_time_base_sec_, tid_now, 1.0 / tid_interval_sec_);
++        } else {
++            // detect wraparound: if current < previous, it wrapped
++            int delta = static_cast<int>(tid_now) - static_cast<int>(tid_prev_);
++            if (delta < 0) delta += 60000;  // tid wraps at ~60000
++            tid_total_count_ += static_cast<uint64_t>(delta);
++            tid_prev_ = tid_now;
++        }
++        double corrected = ros_time_base_sec_ + tid_total_count_ * tid_interval_sec_;
++        imu_ros_data.header.stamp.sec     = static_cast<int32_t>(corrected);
++        imu_ros_data.header.stamp.nanosec = static_cast<uint32_t>(
++            (corrected - static_cast<int32_t>(corrected)) * 1e9);
+     } else {
+-        // fallback: no hardware timestamp in this packet
++        // ultimate fallback
+         imu_ros_data.header.stamp = this->get_clock()->now();
+     }
+     imu_ros_data.header.frame_id 	= frame_id;
+-- 
+2.55.0
+

@@ -1,0 +1,536 @@
+From 9c5b04aef09dd0b364f948d8d4bd7826596ef4d8 Mon Sep 17 00:00:00 2001
+From: kanuba0814 <gaixiaxianl@icloud.com>
+Date: Wed, 13 May 2026 18:25:50 +0900
+Subject: [PATCH 4/6] chore(yesense): snapshot raw imu timing changes before
+ stability fix
+
+---
+ yesense_interface/CMakeLists.txt              |  10 +-
+ yesense_interface/msg/ImuRawHw.msg            |  25 ++
+ yesense_interface/package.xml                 |   5 +-
+ yesense_std_ros2/config/yesense_config.yaml   |   4 +
+ .../launch/yesense_node.launch.py             |  10 +-
+ yesense_std_ros2/src/yesense_node.cpp         | 283 +++++++++++++++---
+ 6 files changed, 291 insertions(+), 46 deletions(-)
+ create mode 100644 yesense_interface/msg/ImuRawHw.msg
+
+diff --git a/yesense_interface/CMakeLists.txt b/yesense_interface/CMakeLists.txt
+index ddae887..a554619 100644
+--- a/yesense_interface/CMakeLists.txt
++++ b/yesense_interface/CMakeLists.txt
+@@ -8,10 +8,8 @@ endif()
+ # find dependencies
+ find_package(ament_cmake REQUIRED)
+ find_package(rosidl_default_generators REQUIRED)
+-
+-# uncomment the following section in order to fill in
+-# further dependencies manually.
+-# find_package(<dependency> REQUIRED)
++find_package(std_msgs REQUIRED)
++find_package(geometry_msgs REQUIRED)
+ 
+ rosidl_generate_interfaces(${PROJECT_NAME}
+   "msg/Tid.msg"
+@@ -35,7 +33,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
+   "msg/PosOnly.msg"    
+   "msg/NavMin.msg"    
+   "msg/NavMinUtc.msg"      
+-  "msg/NavAll.msg"                  
++  "msg/NavAll.msg"
++  "msg/ImuRawHw.msg"
++  DEPENDENCIES std_msgs geometry_msgs
+ )
+ 
+ #ament_export_dependencies(rosidl_default_runtime)
+diff --git a/yesense_interface/msg/ImuRawHw.msg b/yesense_interface/msg/ImuRawHw.msg
+new file mode 100644
+index 0000000..057ea18
+--- /dev/null
++++ b/yesense_interface/msg/ImuRawHw.msg
+@@ -0,0 +1,25 @@
++# ImuRawHw.msg — Raw hardware-timed IMU message for cam_imu_sync
++#
++# Phase 1A: Does NOT rely on hardware timestamps (0x51/0x52).
++# Uses host-side steady_clock as the sole synchronisation anchor.
++# sample_timestamp / data_ready_timestamp / hw_ts_unit_sec are reserved
++# for future Phase 1B when hardware sync is available.
++
++std_msgs/Header header                       # frame_id; stamp = rx_ros_time (diagnostic)
++
++# ── Inertial data ──
++geometry_msgs/Vector3 linear_acceleration    # m/s² (converted from raw)
++geometry_msgs/Vector3 angular_velocity       # rad/s (converted from raw)
++geometry_msgs/Quaternion orientation         # AHRS attitude quaternion
++
++# ── Protocol sequence number (packet-loss / ordering check only) ──
++uint16 tid                                   # Protocol TID (1-60000, wraps)
++
++# ── Host-side time evidence (Phase 1A: sole sync basis) ──
++uint64 rx_steady_ns                          # steady_clock::now() at frame-decode confirm (ns)
++uint64 rx_ros_ns                             # ROS clock now() at frame-decode confirm (ns)
++
++# ── Hardware timestamp fields (reserved, Phase 1A: all zero) ──
++uint32 sample_timestamp                      # 0x51: reserved for future use
++uint32 data_ready_timestamp                  # 0x52: reserved for future use
++float64 hw_ts_unit_sec                       # reserved (0.0 in Phase 1A)
+diff --git a/yesense_interface/package.xml b/yesense_interface/package.xml
+index 4a1c6ed..9a586c0 100644
+--- a/yesense_interface/package.xml
++++ b/yesense_interface/package.xml
+@@ -11,7 +11,10 @@
+ 
+   <build_depend>rosidl_default_generators</build_depend>
+   <exec_depend>rosidl_default_runtime</exec_depend>
+-  <member_of_group>rosidl_interface_packages</member_of_group>  
++  <member_of_group>rosidl_interface_packages</member_of_group>
++
++  <depend>std_msgs</depend>
++  <depend>geometry_msgs</depend>
+ 
+   <test_depend>ament_lint_auto</test_depend>
+   <test_depend>ament_lint_common</test_depend>
+diff --git a/yesense_std_ros2/config/yesense_config.yaml b/yesense_std_ros2/config/yesense_config.yaml
+index e03d777..b55690f 100644
+--- a/yesense_std_ros2/config/yesense_config.yaml
++++ b/yesense_std_ros2/config/yesense_config.yaml
+@@ -8,3 +8,7 @@ yesense_pub:
+         imu_topic: "imu_data"
+         imu_output_rate: 200.0   # Hz, used for tid-based timestamp reconstruction
+         hw_ts_unit_us: 1.0       # sample_timestamp unit (1=μs, 100=100μs)
++        imu_warmup_sec: 0.8      # §4.2 suppress publishing for first N seconds
++        enable_raw_hw_topic: true # Phase 1A: publish /imu/raw_hw with steady timestamps
++        debug_enable: false
++        debug_expected_imu_rate_hz: 0.0
+diff --git a/yesense_std_ros2/launch/yesense_node.launch.py b/yesense_std_ros2/launch/yesense_node.launch.py
+index 31f9913..d295c10 100644
+--- a/yesense_std_ros2/launch/yesense_node.launch.py
++++ b/yesense_std_ros2/launch/yesense_node.launch.py
+@@ -1,4 +1,6 @@
+ from launch import LaunchDescription
++from launch.actions import DeclareLaunchArgument
++from launch.substitutions import LaunchConfiguration
+ from launch_ros.actions import Node
+ from ament_index_python.packages import get_package_share_directory
+ import os
+@@ -11,11 +13,17 @@ def generate_launch_description():
+     ),
+ 
+     return LaunchDescription([
++        DeclareLaunchArgument('debug_enable', default_value='false'),
++        DeclareLaunchArgument('debug_expected_imu_rate_hz', default_value='0.0'),
+          Node(
+             package='yesense_std_ros2',
+             executable='yesense_node_publisher',
+             name='yesense_pub',
+-            parameters=[config],
++            parameters=[config, {
++                'debug_enable': LaunchConfiguration('debug_enable'),
++                'debug_expected_imu_rate_hz':
++                    LaunchConfiguration('debug_expected_imu_rate_hz'),
++            }],
+             output='screen',
+             ),
+         ])
+diff --git a/yesense_std_ros2/src/yesense_node.cpp b/yesense_std_ros2/src/yesense_node.cpp
+index 022910b..3c0776f 100644
+--- a/yesense_std_ros2/src/yesense_node.cpp
++++ b/yesense_std_ros2/src/yesense_node.cpp
+@@ -1,6 +1,12 @@
+ #include <chrono>
++#include <cmath>
++#include <ctime>
++#include <deque>
+ #include <functional>
++#include <iomanip>
+ #include <memory>
++#include <mutex>
++#include <numeric>
+ #include <string>
+ 
+ // ==============linux driver===============
+@@ -25,6 +31,7 @@
+ #include "visualization_msgs/msg/marker.hpp"
+ #include "nav_msgs/msg/path.hpp"
+ #include "geometry_msgs/msg/accel.hpp"
++#include "std_msgs/msg/bool.hpp"
+ 
+ #include "yesense_interface/msg/imu_data.hpp"
+ #include "yesense_interface/msg/imu_data_ten_axis.hpp"
+@@ -37,6 +44,7 @@
+ #include "yesense_interface/msg/nav_min.hpp"
+ #include "yesense_interface/msg/nav_min_utc.hpp"
+ #include "yesense_interface/msg/nav_all.hpp"
++#include "yesense_interface/msg/imu_raw_hw.hpp"
+ 
+ #include "yesense_decoder_comm.h" 
+ #include "yesense_decoder.h"
+@@ -117,6 +125,10 @@ class YESENSE_Publisher : public rclcpp::Node
+ 		this->declare_parameter<std::string>("imu_topic", "imu_data");
+ 		this->declare_parameter<double>("hw_ts_unit_us", 1.0);    // sample_timestamp tick unit in μs (1 or 100)
+ 		this->declare_parameter<double>("imu_output_rate", 200.0); // IMU output rate in Hz (for tid fallback)
++		this->declare_parameter<double>("imu_warmup_sec", 0.8);   // §4.2 warm-up: suppress publishing for first N seconds
++			this->declare_parameter<bool>("enable_raw_hw_topic", true); // Phase 1A: publish /imu/raw_hw
++			this->declare_parameter<bool>("debug_enable", false);
++			this->declare_parameter<double>("debug_expected_imu_rate_hz", 0.0);
+ 		//this->declare_parameter<std::string>("driver_type", "linux_serial");
+ 		
+ 		std::string driver_type_str,imu_topic_ros,imu_topic;
+@@ -132,13 +144,27 @@ class YESENSE_Publisher : public rclcpp::Node
+ 		double imu_output_rate = 200.0;
+ 		this->get_parameter("imu_output_rate", imu_output_rate);
+ 		tid_interval_sec_ = 1.0 / imu_output_rate;
++			this->get_parameter("imu_warmup_sec", imu_warmup_sec_);
++			this->get_parameter("enable_raw_hw_topic", enable_raw_hw_topic_);
++			this->get_parameter("debug_enable", debug_enable_);
++			this->get_parameter("debug_expected_imu_rate_hz", debug_expected_imu_rate_hz_);
++			init_debug_output(imu_output_rate);
+ 		RCLCPP_INFO(this->get_logger(), "serial port %s\n", serial_port.c_str());
+ 		RCLCPP_INFO(this->get_logger(), "baudrate %d\n", baud_rate);
+ 		RCLCPP_INFO(this->get_logger(), "frame id %s\n", frame_id.c_str());
+ 		RCLCPP_INFO(this->get_logger(), "driver type %s\n", driver_type_str.c_str());
+ 		pub_imu_ros 		= this->create_publisher<sensor_msgs::msg::Imu>(imu_topic_ros.c_str(), 10);				
+ 		pub_pose_geometry 	= this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_geo", 10);		
+-		pub_marker 			= this->create_publisher<visualization_msgs::msg::Marker>("marker", 10);	
++		pub_marker 			= this->create_publisher<visualization_msgs::msg::Marker>("marker", 10);
++
++		// §4.4 pipeline ready publisher (方案 B)
++		pub_pipeline_ready_ = this->create_publisher<std_msgs::msg::Bool>("imu/pipeline_ready", 1);
++
++		// Phase 1A: raw hardware-timed IMU publisher
++		if (enable_raw_hw_topic_) {
++			pub_imu_raw_hw_ = this->create_publisher<yesense_interface::msg::ImuRawHw>("imu/raw_hw", 10);
++			RCLCPP_INFO(this->get_logger(), "Phase 1A: /imu/raw_hw publisher enabled\n");
++		}
+ 
+ 		// ==========================================		
+ 		pub_imu 			= this->create_publisher<yesense_interface::msg::ImuData>(imu_topic.c_str(), 10);		
+@@ -188,8 +214,10 @@ class YESENSE_Publisher : public rclcpp::Node
+ 				ser.setParity(serial::parity_t::parity_none);       //设置校验位
+ 
+ 				//打开
+-				ser.open();		
++				ser.open();
++				// §4.1 串口打开后立即 flush 输入+输出
+ 				ser.flushInput();
++				ser.flushOutput();
+ 			}
+ 			catch (serial::IOException &e)
+ 			{
+@@ -218,13 +246,19 @@ class YESENSE_Publisher : public rclcpp::Node
+ 			newtio.c_cflag &= ~PARENB;
+ 			newtio.c_iflag = IGNPAR;  
+ 			newtio.c_oflag = 0;
+-			tcflush(fd,TCIFLUSH);  
++			tcflush(fd, TCIOFLUSH);  // §4.1 清空输入+输出缓冲
+ 			tcsetattr(fd,TCSAFLUSH, &newtio);  
+ 			tcgetattr(fd,&oldtio);			
+ 			RCLCPP_INFO(this->get_logger(), "open linux serial\n");	
+ 		}
+ 
+-		RCLCPP_INFO(this->get_logger(), "open serial port to decode msg!\n");			
++		RCLCPP_INFO(this->get_logger(), "open serial port to decode msg!\n");
++
++		// §4.2 warm-up: record start time
++		warmup_start_ = std::chrono::steady_clock::now();
++		imu_publish_enabled_ = false;
++		pipeline_ready_published_ = false;
++		RCLCPP_INFO(this->get_logger(), "IMU warm-up: %.1f sec (will not publish until stable)\n", imu_warmup_sec_);
+ 
+ 		// =================================================
+ 		timer_ 			= this->create_wall_timer(1ms, std::bind(&YESENSE_Publisher::timer_callback, this));
+@@ -253,10 +287,7 @@ class YESENSE_Publisher : public rclcpp::Node
+ 			if(ser.isOpen() &&ser.available()) 
+ 			{
+ 			size_t bytes_to_read = std::min(static_cast<size_t>(ser.available()), sizeof(r_buffer));
+-			size_t available_bytes = ser.available();
+-			//std::cout << "\033[1m\033[34m" << "wheeltec_tues debug_aaaaaaaa" << "\033[0m"<< std::endl;  // wheeltec_tues debug
+-			bytes_read_r_buffer = ser.read(r_buffer, bytes_to_read);	//wheeltec_tues
+-			//bytes_read_r_buffer = ser.read(r_buffer, ser.available()); //wheeltec_tues debug
++			bytes_read_r_buffer = ser.read(r_buffer, bytes_to_read);
+ 			}
+ 		}
+ 		else if(serial_drv_linux == driver_type)
+@@ -268,43 +299,124 @@ class YESENSE_Publisher : public rclcpp::Node
+ 		if(analysis_ok == ret)
+ 		{
+ 			if(yis_out.content.valid_flg)
+-			{ 
++			{
++				// §4.3 take timestamp IMMEDIATELY after frame confirmed
++				auto host_steady_now = std::chrono::steady_clock::now();
+ 
+ 				yis_out.content.valid_flg = 0u;
+-				user_info.msg_cnt++;	
+-				publish_msg(&yis_out);
+-					
+-				//RCLCPP_INFO(this->get_logger(), "msg rate: %d, tid %d, acc: %f, %f, %f gyro: %f, %f, %f, euler: %f, %f, %f!", 
+-				//			user_info.msg_rate,
+-				//			yis_out.tid, yis_out.acc.x, yis_out.acc.y, yis_out.acc.z, yis_out.gyro.x, yis_out.gyro.y, yis_out.gyro.z,
+-				//			yis_out.euler.pitch, yis_out.euler.roll, yis_out.euler.yaw
+-				//		);
+-				//
+-
++				user_info.msg_cnt++;
++
++				// §4.4 update IMU pipeline statistics
++				update_pipeline_stats(host_steady_now);
++
++				// §4.2 warm-up: check if warm-up period has elapsed
++				if (!imu_publish_enabled_) {
++					auto elapsed = std::chrono::duration<double>(
++						host_steady_now - warmup_start_).count();
++					if (elapsed >= imu_warmup_sec_ && check_pipeline_ready()) {
++						imu_publish_enabled_ = true;
++						RCLCPP_INFO(this->get_logger(),
++							"IMU warm-up complete (%.2f s), publishing enabled",
++							elapsed);
++					} else {
++						// Still warming up — parse & track but don't publish
++						return;
++					}
++				}
++
++				// §4.4 publish pipeline_ready once (方案 B)
++				if (!pipeline_ready_published_) {
++					std_msgs::msg::Bool ready_msg;
++					ready_msg.data = true;
++					pub_pipeline_ready_->publish(ready_msg);
++					pipeline_ready_published_ = true;
++					RCLCPP_INFO(this->get_logger(),
++						"Published /imu/pipeline_ready = true");
++				}
++
++				publish_msg(&yis_out, host_steady_now);
+ 			}
+ 		}
+ 	}
+ 	
+-	void callback_msg_rate_calc()
+-	{
+-		if(user_info.flg)
++		void callback_msg_rate_calc()
+ 		{
+-			user_info.timing_cnt++;
++			if(user_info.flg)
++			{
++				user_info.timing_cnt++;
+ 			if(user_info.timing_cnt >= CNT_PER_SECOND)
+ 			{
+-				user_info.timing_cnt 	= 0u;
+-				user_info.msg_rate	= user_info.msg_cnt;
+-				user_info.msg_cnt		= 0u;
++					user_info.timing_cnt 	= 0u;
++					user_info.msg_rate	= user_info.msg_cnt;
++					user_info.msg_cnt		= 0u;
++					write_debug_summary();
++				}
+ 			}
+ 		}
+-	}
+ 
+-	void publish_msg(yis_out_data_t *result);
++		void publish_msg(yis_out_data_t *result, std::chrono::steady_clock::time_point host_steady_now);
++
++		void init_debug_output(double imu_output_rate)
++		{
++			if (!debug_enable_) return;
++			RCLCPP_INFO(this->get_logger(),
++			            "[yesense_meta] node=yesense_publisher serial_port=%s "
++			            "baud_rate=%d frame_id=%s imu_output_rate=%.3f "
++			            "debug_expected_imu_rate_hz=%.3f",
++			            serial_port.c_str(), baud_rate, frame_id.c_str(),
++			            imu_output_rate, debug_expected_imu_rate_hz_);
++		}
++
++		void write_debug_raw(
++			const sensor_msgs::msg::Imu &imu_msg,
++			const yis_out_data_t *result,
++			std::chrono::steady_clock::time_point host_steady_now)
++		{
++			if (!debug_enable_) return;
++			const auto steady_ns =
++				std::chrono::duration_cast<std::chrono::nanoseconds>(
++					host_steady_now.time_since_epoch()).count();
++			const auto ros_header_ns = rclcpp::Time(imu_msg.header.stamp).nanoseconds();
++			const auto rx_ros_ns = this->get_clock()->now().nanoseconds();
++			std::lock_guard<std::mutex> lock(debug_mutex_);
++			RCLCPP_INFO(this->get_logger(),
++			            "[yesense_raw_imu] steady_ns=%ld ros_header_ns=%ld "
++			            "rx_ros_ns=%ld tid=%u sample_timestamp=%u "
++			            "data_ready_timestamp=%u ax=%.9f ay=%.9f az=%.9f "
++			            "gx=%.9f gy=%.9f gz=%.9f",
++			            steady_ns, ros_header_ns, rx_ros_ns, result->tid,
++			            result->sample_timestamp, 0u,
++			            imu_msg.linear_acceleration.x,
++			            imu_msg.linear_acceleration.y,
++			            imu_msg.linear_acceleration.z,
++			            imu_msg.angular_velocity.x,
++			            imu_msg.angular_velocity.y,
++			            imu_msg.angular_velocity.z);
++		}
++
++		void write_debug_summary()
++		{
++			if (!debug_enable_) return;
++			const auto steady_ns =
++				std::chrono::duration_cast<std::chrono::nanoseconds>(
++					std::chrono::steady_clock::now().time_since_epoch()).count();
++			std::lock_guard<std::mutex> lock(debug_mutex_);
++			RCLCPP_INFO(this->get_logger(),
++			            "[yesense_summary] steady_ns=%ld msg_rate_hz=%u "
++			            "total_published=%lu debug_expected_imu_rate_hz=%.3f",
++			            steady_ns, user_info.msg_rate, debug_total_published_,
++			            debug_expected_imu_rate_hz_);
++		}
+ 
+-	rclcpp::TimerBase::SharedPtr timer_;
+-	rclcpp::TimerBase::SharedPtr timer_msg_rate_;	
++		rclcpp::TimerBase::SharedPtr timer_;
++			rclcpp::TimerBase::SharedPtr timer_msg_rate_;
+ 
+-	// serial
++			bool debug_enable_ = false;
++			double debug_expected_imu_rate_hz_ = 0.0;
++			std::mutex debug_mutex_;
++		uint64_t debug_total_published_ = 0;
++
++		// serial
+ 	unsigned char r_buffer[UART_RX_BUF_LEN];
+ 	serial::Serial ser;	// ros驱动串口	
+ 	int fd;				// linux驱动下的串口
+@@ -333,10 +445,69 @@ class YESENSE_Publisher : public rclcpp::Node
+ 	unsigned short tid_prev_ = 0;      // previous tid value for wraparound detection
+ 	static constexpr double kBaseEmaAlpha_ = 0.005; // EMA smoothing factor per sample
+ 
++	// §4.2 warm-up state
++	double imu_warmup_sec_ = 0.8;
++	bool imu_publish_enabled_ = false;
++	std::chrono::steady_clock::time_point warmup_start_;
++
++	// §4.4 IMU pipeline readiness tracking
++	bool pipeline_ready_published_ = false;
++	static constexpr size_t kPipelineStatsWindow_ = 40;
++	std::deque<double> pipeline_periods_ms_;
++	std::chrono::steady_clock::time_point last_frame_steady_;
++	bool last_frame_steady_valid_ = false;
++
++	void update_pipeline_stats(std::chrono::steady_clock::time_point now) {
++		if (last_frame_steady_valid_) {
++			double period_ms = std::chrono::duration<double, std::milli>(
++				now - last_frame_steady_).count();
++			if (period_ms > 0 && period_ms < 100) {
++				pipeline_periods_ms_.push_back(period_ms);
++				while (pipeline_periods_ms_.size() > kPipelineStatsWindow_) {
++					pipeline_periods_ms_.pop_front();
++				}
++			}
++		}
++		last_frame_steady_ = now;
++		last_frame_steady_valid_ = true;
++	}
++
++	bool check_pipeline_ready() const {
++		if (pipeline_periods_ms_.size() < kPipelineStatsWindow_) return false;
++		double sum = std::accumulate(pipeline_periods_ms_.begin(),
++			pipeline_periods_ms_.end(), 0.0);
++		double mean = sum / pipeline_periods_ms_.size();
++		double sq_sum = 0.0;
++		for (auto p : pipeline_periods_ms_) sq_sum += (p - mean) * (p - mean);
++		double std_dev = std::sqrt(sq_sum / (pipeline_periods_ms_.size() - 1));
++		// Ready: mean ~5ms (200Hz), std < 1ms
++		return (mean >= 2.0 && mean <= 8.0 && std_dev < 1.0);
++	}
++
++	void reset_pipeline_state() {
++		hw_ts_initialized_ = false;
++		ros_time_base_sec_ = 0.0;
++		hw_ts_base_ = 0;
++		use_tid_fallback_ = false;
++		tid_total_count_ = 0;
++		tid_prev_ = 0;
++		imu_publish_enabled_ = false;
++		pipeline_ready_published_ = false;
++		pipeline_periods_ms_.clear();
++		last_frame_steady_valid_ = false;
++	}
++
+ 	// ros2 original topic
+ 	rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_imu_ros;		
+ 	rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_pose_geometry;	
+-	rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_marker;	
++	rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_marker;
++
++	// §4.4 pipeline ready publisher (方案 B)
++	rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pub_pipeline_ready_;
++
++	// Phase 1A: raw hardware-timed IMU publisher
++	rclcpp::Publisher<yesense_interface::msg::ImuRawHw>::SharedPtr pub_imu_raw_hw_;
++	bool enable_raw_hw_topic_ = true;
+ 
+ 	// yesense self-defined topic
+ 	rclcpp::Publisher<yesense_interface::msg::ImuData>::SharedPtr pub_imu;							// only inertia data: tid/acc/gyro/sensor_temp/sample_timestamp
+@@ -354,7 +525,7 @@ class YESENSE_Publisher : public rclcpp::Node
+ 	yesense_decoder decoder;
+ };
+ 
+-void YESENSE_Publisher::publish_msg(yis_out_data_t *result)
++void YESENSE_Publisher::publish_msg(yis_out_data_t *result, std::chrono::steady_clock::time_point host_steady_now)
+ {
+ 	sensor_msgs::msg::Imu					imu_ros_data;
+    	geometry_msgs::msg::PoseStamped 		pose_data;	
+@@ -440,12 +611,46 @@ void YESENSE_Publisher::publish_msg(yis_out_data_t *result)
+     imu_ros_data.angular_velocity.x = result->gyro.x / DEG_TO_RAD_FACTOR;
+     imu_ros_data.angular_velocity.y = result->gyro.y / DEG_TO_RAD_FACTOR;
+     imu_ros_data.angular_velocity.z = result->gyro.z / DEG_TO_RAD_FACTOR;
+-    imu_ros_data.linear_acceleration.x = result->acc.x;
+-    imu_ros_data.linear_acceleration.y = result->acc.y;
+-    imu_ros_data.linear_acceleration.z = result->acc.z;
+-    pub_imu_ros->publish(imu_ros_data); //tues
+-
+-
++	    imu_ros_data.linear_acceleration.x = result->acc.x;
++	    imu_ros_data.linear_acceleration.y = result->acc.y;
++	    imu_ros_data.linear_acceleration.z = result->acc.z;
++	    pub_imu_ros->publish(imu_ros_data); //tues
++	    debug_total_published_++;
++	    write_debug_raw(imu_ros_data, result, host_steady_now);
++
++	    // ── Phase 1A: publish ImuRawHw with host-side steady/ROS time ──
++    if (pub_imu_raw_hw_ && enable_raw_hw_topic_) {
++        yesense_interface::msg::ImuRawHw raw_hw;
++        raw_hw.header.frame_id = frame_id;
++        auto ros_now = this->get_clock()->now();
++        raw_hw.header.stamp = ros_now;
++
++        raw_hw.linear_acceleration.x = result->acc.x;
++        raw_hw.linear_acceleration.y = result->acc.y;
++        raw_hw.linear_acceleration.z = result->acc.z;
++        raw_hw.angular_velocity.x = result->gyro.x / DEG_TO_RAD_FACTOR;
++        raw_hw.angular_velocity.y = result->gyro.y / DEG_TO_RAD_FACTOR;
++        raw_hw.angular_velocity.z = result->gyro.z / DEG_TO_RAD_FACTOR;
++        raw_hw.orientation.x = result->quat.q1;
++        raw_hw.orientation.y = result->quat.q2;
++        raw_hw.orientation.z = result->quat.q3;
++        raw_hw.orientation.w = result->quat.q0;
++
++        raw_hw.tid = result->tid;
++
++        // Host-side time evidence (Phase 1A: sole sync basis)
++        raw_hw.rx_steady_ns = static_cast<uint64_t>(
++            std::chrono::duration_cast<std::chrono::nanoseconds>(
++                host_steady_now.time_since_epoch()).count());
++        raw_hw.rx_ros_ns = static_cast<uint64_t>(ros_now.nanoseconds());
++
++        // Reserved fields (Phase 1A: all zero)
++        raw_hw.sample_timestamp = 0;
++        raw_hw.data_ready_timestamp = 0;
++        raw_hw.hw_ts_unit_sec = 0.0;
++
++        pub_imu_raw_hw_->publish(raw_hw);
++    }
+ 
+   	// ================ update pose =================
+     pose_data.header.frame_id 	= frame_id;
+-- 
+2.55.0
+

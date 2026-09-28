@@ -1,0 +1,24 @@
+From 0e240cd06f9d80371cdfaa7fd2e6fb2cbad860c3 Mon Sep 17 00:00:00 2001
+From: kanuba0814 <gaixiaxianl@icloud.com>
+Date: Tue, 7 Apr 2026 13:19:48 +0800
+Subject: [PATCH 2/6] chore(yesense): add hw timestamp params to
+ yesense_config.yaml
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+---
+ yesense_std_ros2/config/yesense_config.yaml | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/yesense_std_ros2/config/yesense_config.yaml b/yesense_std_ros2/config/yesense_config.yaml
+index c7ba656..e03d777 100644
+--- a/yesense_std_ros2/config/yesense_config.yaml
++++ b/yesense_std_ros2/config/yesense_config.yaml
+@@ -6,3 +6,5 @@ yesense_pub:
+         driver_type: "ros_serial"
+         imu_topic_ros: "imu/data_raw"
+         imu_topic: "imu_data"
++        imu_output_rate: 200.0   # Hz, used for tid-based timestamp reconstruction
++        hw_ts_unit_us: 1.0       # sample_timestamp unit (1=μs, 100=100μs)
+-- 
+2.55.0
+

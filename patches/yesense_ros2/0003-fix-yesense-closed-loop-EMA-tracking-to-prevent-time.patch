@@ -1,0 +1,118 @@
+From 1740e23c8586f05aa1772a18f205564422b9b013 Mon Sep 17 00:00:00 2001
+From: kanuba0814 <gaixiaxianl@icloud.com>
+Date: Tue, 7 Apr 2026 14:19:57 +0800
+Subject: [PATCH 3/6] fix(yesense): closed-loop EMA tracking to prevent
+ timestamp drift from wall clock
+
+The open-loop approach (base + count * interval) diverged from wall clock
+when the node ran for extended periods before recording, causing Kalibr to
+report "time ranges do not overlap" between camera and IMU.
+
+Now uses an exponential moving average (alpha=0.005) to continuously
+re-anchor the time base to wall clock while preserving tid-based
+jitter-free inter-sample spacing. Verified:
+- interval jitter: 0.0002 ms std (unchanged)
+- wall-clock offset: converges to <5 ms within 30 seconds
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+---
+ yesense_std_ros2/src/yesense_node.cpp | 37 ++++++++++++++++++---------
+ 1 file changed, 25 insertions(+), 12 deletions(-)
+
+diff --git a/yesense_std_ros2/src/yesense_node.cpp b/yesense_std_ros2/src/yesense_node.cpp
+index 601f332..022910b 100644
+--- a/yesense_std_ros2/src/yesense_node.cpp
++++ b/yesense_std_ros2/src/yesense_node.cpp
+@@ -319,9 +319,11 @@ class YESENSE_Publisher : public rclcpp::Node
+ 	yis_out_data_t yis_out;
+ 	user_info_t user_info;
+ 
+-	// hardware timestamp correction (sample_timestamp or tid-based fallback)
++	// Closed-loop hardware timestamp correction.
++	// Uses tid (or sample_timestamp) for jitter-free inter-sample spacing,
++	// while continuously tracking wall-clock via EMA to prevent drift.
+ 	bool hw_ts_initialized_ = false;
+-	double ros_time_base_sec_ = 0.0;   // ROS wall-clock at first sample (seconds)
++	double ros_time_base_sec_ = 0.0;   // EMA-smoothed base: stamp = base + count * tick
+ 	uint32_t hw_ts_base_ = 0;          // sample_timestamp at first sample
+ 	double hw_ts_unit_sec_ = 1e-6;     // conversion factor: ticks → seconds (1μs default)
+ 	double tid_interval_sec_ = 0.005;  // 1/output_rate: default 5ms for 200Hz
+@@ -329,6 +331,7 @@ class YESENSE_Publisher : public rclcpp::Node
+ 	// tid wraparound handling (tid is uint16, wraps at ~60000)
+ 	uint64_t tid_total_count_ = 0;     // extended 64-bit sample counter
+ 	unsigned short tid_prev_ = 0;      // previous tid value for wraparound detection
++	static constexpr double kBaseEmaAlpha_ = 0.005; // EMA smoothing factor per sample
+ 
+ 	// ros2 original topic
+ 	rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_imu_ros;		
+@@ -370,13 +373,15 @@ void YESENSE_Publisher::publish_msg(yis_out_data_t *result)
+ 	yesense_interface::msg::NavAll			nav_all_data;
+ 
+     // =========== publish imu message ==============
+-    // Reconstruct accurate ROS timestamps from hardware counters,
+-    // eliminating UART/USB buffering jitter and polling delay.
++    // Closed-loop timestamp reconstruction from hardware counters.
+     //
+-    // Priority: sample_timestamp (data_id=0x51, uint32) > tid (uint16 sequence)
+-    // Map first sample to ROS wall-clock, then advance by counter delta × scale.
++    // Uses tid (or sample_timestamp) for jitter-free inter-sample spacing,
++    // while continuously tracking wall-clock via EMA to prevent drift.
++    //   stamp = base + count * tick_interval
++    //   base  = EMA(now() - count * tick_interval)   ← tracks wall clock
++    //
++    // Priority: sample_timestamp (data_id=0x51) > tid (uint16 seq counter)
+     if (result->content.sample_timestamp) {
+-        // Best case: hardware microsecond timestamp
+         uint32_t hw_ts = result->sample_timestamp;
+         if (!hw_ts_initialized_) {
+             ros_time_base_sec_ = this->get_clock()->now().seconds();
+@@ -385,14 +390,19 @@ void YESENSE_Publisher::publish_msg(yis_out_data_t *result)
+             RCLCPP_INFO(this->get_logger(),
+                 "Timestamp base: ros=%.6f hw=%u mode=sample_timestamp (%.0f us/tick)",
+                 ros_time_base_sec_, hw_ts_base_, hw_ts_unit_sec_ * 1e6);
++        } else {
++            // EMA: continuously re-anchor base to wall clock
++            uint32_t dt_ticks = hw_ts - hw_ts_base_;
++            double measured_base = this->get_clock()->now().seconds()
++                                   - dt_ticks * hw_ts_unit_sec_;
++            ros_time_base_sec_ += kBaseEmaAlpha_ * (measured_base - ros_time_base_sec_);
+         }
+-        uint32_t dt_ticks = hw_ts - hw_ts_base_;  // unsigned wrap-safe
++        uint32_t dt_ticks = hw_ts - hw_ts_base_;
+         double corrected = ros_time_base_sec_ + dt_ticks * hw_ts_unit_sec_;
+         imu_ros_data.header.stamp.sec     = static_cast<int32_t>(corrected);
+         imu_ros_data.header.stamp.nanosec = static_cast<uint32_t>(
+             (corrected - static_cast<int32_t>(corrected)) * 1e9);
+     } else if (result->tid > 0) {
+-        // Fallback: use tid (uint16, wraps at ~60000) as sample counter
+         unsigned short tid_now = result->tid;
+         if (!hw_ts_initialized_) {
+             ros_time_base_sec_ = this->get_clock()->now().seconds();
+@@ -404,18 +414,21 @@ void YESENSE_Publisher::publish_msg(yis_out_data_t *result)
+                 "Timestamp base: ros=%.6f tid=%u mode=tid (%.1f Hz)",
+                 ros_time_base_sec_, tid_now, 1.0 / tid_interval_sec_);
+         } else {
+-            // detect wraparound: if current < previous, it wrapped
++            // tid wraparound: uint16 range is 1-60000
+             int delta = static_cast<int>(tid_now) - static_cast<int>(tid_prev_);
+-            if (delta < 0) delta += 60000;  // tid wraps at ~60000
++            if (delta < 0) delta += 60000;
+             tid_total_count_ += static_cast<uint64_t>(delta);
+             tid_prev_ = tid_now;
++            // EMA: continuously re-anchor base to wall clock
++            double measured_base = this->get_clock()->now().seconds()
++                                   - tid_total_count_ * tid_interval_sec_;
++            ros_time_base_sec_ += kBaseEmaAlpha_ * (measured_base - ros_time_base_sec_);
+         }
+         double corrected = ros_time_base_sec_ + tid_total_count_ * tid_interval_sec_;
+         imu_ros_data.header.stamp.sec     = static_cast<int32_t>(corrected);
+         imu_ros_data.header.stamp.nanosec = static_cast<uint32_t>(
+             (corrected - static_cast<int32_t>(corrected)) * 1e9);
+     } else {
+-        // ultimate fallback
+         imu_ros_data.header.stamp = this->get_clock()->now();
+     }
+     imu_ros_data.header.frame_id 	= frame_id;
+-- 
+2.55.0
+

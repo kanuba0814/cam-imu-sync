@@ -1,0 +1,723 @@
+From 6771596900a7f44c9b66a682f83b9a2d5742667d Mon Sep 17 00:00:00 2001
+From: kanuba0814 <gaixiaxianl@icloud.com>
+Date: Thu, 14 May 2026 13:31:05 +0900
+Subject: [PATCH 6/6] fix(yesense): decouple raw imu publish path
+
+---
+ yesense_std_ros2/config/yesense_config.yaml   |  11 +-
+ .../launch/yesense_node.launch.py             |  24 +
+ yesense_std_ros2/src/yesense_node.cpp         | 480 +++++++++++++++---
+ 3 files changed, 439 insertions(+), 76 deletions(-)
+
+diff --git a/yesense_std_ros2/config/yesense_config.yaml b/yesense_std_ros2/config/yesense_config.yaml
+index b2202a7..c519d7a 100644
+--- a/yesense_std_ros2/config/yesense_config.yaml
++++ b/yesense_std_ros2/config/yesense_config.yaml
+@@ -10,7 +10,14 @@ yesense_pub:
+         hw_ts_unit_us: 1.0       # sample_timestamp unit (1=μs, 100=100μs)
+         imu_warmup_sec: 0.8      # §4.2 suppress publishing for first N seconds
+         enable_raw_hw_topic: true # Phase 1A: publish /imu/raw_hw with steady timestamps
+-        imu_qos_depth: 1000       # RELIABLE keep-last depth for /imu/data_raw
+-        raw_hw_qos_depth: 1000    # RELIABLE keep-last depth for /imu/raw_hw
++        imu_qos_depth: 1000       # keep-last depth for /imu/data_raw
++        raw_hw_qos_depth: 1000    # keep-last depth for /imu/raw_hw
++        imu_qos_reliability: "best_effort"
++        raw_hw_qos_reliability: "best_effort"
++        publish_queue_depth: 4000 # serial-to-ROS publish queue depth
++        ros_imu_publish_queue_depth: 4000 # /imu/data_raw async queue depth
++        legacy_publish_queue_depth: 4000 # non-critical legacy topic queue depth
++        realtime_thread_priority: 0 # SCHED_FIFO priority for serial/raw_hw threads
+         debug_enable: false
++        debug_trace_samples: false
+         debug_expected_imu_rate_hz: 0.0
+diff --git a/yesense_std_ros2/launch/yesense_node.launch.py b/yesense_std_ros2/launch/yesense_node.launch.py
+index c866b30..b6c780d 100644
+--- a/yesense_std_ros2/launch/yesense_node.launch.py
++++ b/yesense_std_ros2/launch/yesense_node.launch.py
+@@ -14,20 +14,44 @@ def generate_launch_description():
+ 
+     return LaunchDescription([
+         DeclareLaunchArgument('debug_enable', default_value='false'),
++        DeclareLaunchArgument('debug_trace_samples', default_value='false'),
+         DeclareLaunchArgument('debug_expected_imu_rate_hz', default_value='0.0'),
+         DeclareLaunchArgument('imu_qos_depth', default_value='1000'),
+         DeclareLaunchArgument('raw_hw_qos_depth', default_value='1000'),
++        DeclareLaunchArgument('imu_qos_reliability', default_value='best_effort'),
++        DeclareLaunchArgument(
++            'raw_hw_qos_reliability', default_value='best_effort'),
++        DeclareLaunchArgument('publish_queue_depth', default_value='4000'),
++        DeclareLaunchArgument(
++            'ros_imu_publish_queue_depth', default_value='4000'),
++        DeclareLaunchArgument(
++            'legacy_publish_queue_depth', default_value='4000'),
++        DeclareLaunchArgument('realtime_thread_priority', default_value='0'),
+          Node(
+             package='yesense_std_ros2',
+             executable='yesense_node_publisher',
+             name='yesense_pub',
+             parameters=[config, {
+                 'debug_enable': LaunchConfiguration('debug_enable'),
++                'debug_trace_samples':
++                    LaunchConfiguration('debug_trace_samples'),
+                 'debug_expected_imu_rate_hz':
+                     LaunchConfiguration('debug_expected_imu_rate_hz'),
+                 'imu_qos_depth': LaunchConfiguration('imu_qos_depth'),
+                 'raw_hw_qos_depth':
+                     LaunchConfiguration('raw_hw_qos_depth'),
++                'imu_qos_reliability':
++                    LaunchConfiguration('imu_qos_reliability'),
++                'raw_hw_qos_reliability':
++                    LaunchConfiguration('raw_hw_qos_reliability'),
++                'publish_queue_depth':
++                    LaunchConfiguration('publish_queue_depth'),
++                'ros_imu_publish_queue_depth':
++                    LaunchConfiguration('ros_imu_publish_queue_depth'),
++                'legacy_publish_queue_depth':
++                    LaunchConfiguration('legacy_publish_queue_depth'),
++                'realtime_thread_priority':
++                    LaunchConfiguration('realtime_thread_priority'),
+             }],
+             output='screen',
+             ),
+diff --git a/yesense_std_ros2/src/yesense_node.cpp b/yesense_std_ros2/src/yesense_node.cpp
+index 41c677b..bc26f7f 100644
+--- a/yesense_std_ros2/src/yesense_node.cpp
++++ b/yesense_std_ros2/src/yesense_node.cpp
+@@ -1,5 +1,9 @@
+ #include <chrono>
+ #include <cmath>
++#include <atomic>
++#include <cerrno>
++#include <condition_variable>
++#include <cstring>
+ #include <ctime>
+ #include <deque>
+ #include <functional>
+@@ -8,6 +12,7 @@
+ #include <mutex>
+ #include <numeric>
+ #include <string>
++#include <thread>
+ 
+ // ==============linux driver===============
+ #include     <stdio.h>      /*标准输入输出的定义*/
+@@ -20,6 +25,7 @@
+ #include     <errno.h>      /*错误号定义*/
+ #include     <sys/time.h>
+ #include     <getopt.h>
++#include     <pthread.h>
+ 
+ // ==============ros driver================
+ #include <serial/serial.h>
+@@ -129,7 +135,14 @@ class YESENSE_Publisher : public rclcpp::Node
+ 			this->declare_parameter<bool>("enable_raw_hw_topic", true); // Phase 1A: publish /imu/raw_hw
+ 			this->declare_parameter<int>("imu_qos_depth", 1000);
+ 			this->declare_parameter<int>("raw_hw_qos_depth", 1000);
++			this->declare_parameter<std::string>("imu_qos_reliability", "best_effort");
++			this->declare_parameter<std::string>("raw_hw_qos_reliability", "best_effort");
++			this->declare_parameter<int>("publish_queue_depth", 4000);
++			this->declare_parameter<int>("ros_imu_publish_queue_depth", 4000);
++			this->declare_parameter<int>("legacy_publish_queue_depth", 4000);
++			this->declare_parameter<int>("realtime_thread_priority", 0);
+ 			this->declare_parameter<bool>("debug_enable", false);
++			this->declare_parameter<bool>("debug_trace_samples", false);
+ 			this->declare_parameter<double>("debug_expected_imu_rate_hz", 0.0);
+ 		//this->declare_parameter<std::string>("driver_type", "linux_serial");
+ 		
+@@ -151,6 +164,49 @@ class YESENSE_Publisher : public rclcpp::Node
+ 			this->get_parameter("raw_hw_qos_depth", raw_hw_qos_depth_);
+ 			int imu_qos_depth = 1000;
+ 			this->get_parameter("imu_qos_depth", imu_qos_depth);
++			std::string imu_qos_reliability = "best_effort";
++			std::string raw_hw_qos_reliability = "best_effort";
++			this->get_parameter("imu_qos_reliability", imu_qos_reliability);
++			this->get_parameter("raw_hw_qos_reliability", raw_hw_qos_reliability);
++			int publish_queue_depth = 4000;
++			this->get_parameter("publish_queue_depth", publish_queue_depth);
++			int ros_imu_publish_queue_depth = 4000;
++			this->get_parameter(
++				"ros_imu_publish_queue_depth", ros_imu_publish_queue_depth);
++			int legacy_publish_queue_depth = 4000;
++			this->get_parameter(
++				"legacy_publish_queue_depth", legacy_publish_queue_depth);
++			this->get_parameter(
++				"realtime_thread_priority", realtime_thread_priority_);
++			if (publish_queue_depth < 1) {
++				RCLCPP_WARN(this->get_logger(),
++					"publish_queue_depth=%d is invalid; using 1",
++					publish_queue_depth);
++				publish_queue_depth = 1;
++			}
++			if (legacy_publish_queue_depth < 1) {
++				RCLCPP_WARN(this->get_logger(),
++					"legacy_publish_queue_depth=%d is invalid; using 1",
++					legacy_publish_queue_depth);
++				legacy_publish_queue_depth = 1;
++			}
++			if (ros_imu_publish_queue_depth < 1) {
++				RCLCPP_WARN(this->get_logger(),
++					"ros_imu_publish_queue_depth=%d is invalid; using 1",
++					ros_imu_publish_queue_depth);
++				ros_imu_publish_queue_depth = 1;
++			}
++			if (realtime_thread_priority_ < 0 || realtime_thread_priority_ > 99) {
++				RCLCPP_WARN(this->get_logger(),
++					"realtime_thread_priority=%d is invalid; using 0",
++					realtime_thread_priority_);
++				realtime_thread_priority_ = 0;
++			}
++			publish_queue_depth_ = static_cast<size_t>(publish_queue_depth);
++			ros_imu_publish_queue_depth_ =
++				static_cast<size_t>(ros_imu_publish_queue_depth);
++			legacy_publish_queue_depth_ =
++				static_cast<size_t>(legacy_publish_queue_depth);
+ 			if (raw_hw_qos_depth_ < 1) {
+ 				RCLCPP_WARN(this->get_logger(),
+ 					"raw_hw_qos_depth=%d is invalid; using 1",
+@@ -164,24 +220,52 @@ class YESENSE_Publisher : public rclcpp::Node
+ 				imu_qos_depth = 1;
+ 			}
+ 			this->get_parameter("debug_enable", debug_enable_);
++			this->get_parameter("debug_trace_samples", debug_trace_samples_);
+ 			this->get_parameter("debug_expected_imu_rate_hz", debug_expected_imu_rate_hz_);
+ 			init_debug_output(imu_output_rate);
+ 		RCLCPP_INFO(this->get_logger(), "serial port %s\n", serial_port.c_str());
+ 		RCLCPP_INFO(this->get_logger(), "baudrate %d\n", baud_rate);
+ 		RCLCPP_INFO(this->get_logger(), "frame id %s\n", frame_id.c_str());
+ 		RCLCPP_INFO(this->get_logger(), "driver type %s\n", driver_type_str.c_str());
+-		auto imu_reliable_qos = rclcpp::QoS(
+-			rclcpp::KeepLast(static_cast<size_t>(imu_qos_depth)));
+-		imu_reliable_qos.reliable();
+-		imu_reliable_qos.durability_volatile();
+-		auto raw_hw_reliable_qos = rclcpp::QoS(
+-			rclcpp::KeepLast(static_cast<size_t>(raw_hw_qos_depth_)));
+-		raw_hw_reliable_qos.reliable();
+-		raw_hw_reliable_qos.durability_volatile();
++		auto make_sensor_qos = [this](
++			const std::string & param_name,
++			int depth,
++			const std::string & reliability) {
++			auto qos = rclcpp::QoS(
++				rclcpp::KeepLast(static_cast<size_t>(depth)));
++			if (reliability == "reliable") {
++				qos.reliable();
++			} else if (reliability == "best_effort") {
++				qos.best_effort();
++			} else {
++				RCLCPP_WARN(this->get_logger(),
++					"%s=%s is invalid; using best_effort",
++					param_name.c_str(), reliability.c_str());
++				qos.best_effort();
++			}
++			qos.durability_volatile();
++			return qos;
++		};
++		auto imu_qos = make_sensor_qos(
++			"imu_qos_reliability", imu_qos_depth, imu_qos_reliability);
++		auto raw_hw_qos = make_sensor_qos(
++			"raw_hw_qos_reliability",
++			raw_hw_qos_depth_,
++			raw_hw_qos_reliability);
+ 		RCLCPP_INFO(this->get_logger(),
+-			"IMU QoS: /%s RELIABLE keep_last=%d, /imu/raw_hw RELIABLE keep_last=%d",
+-			imu_topic_ros.c_str(), imu_qos_depth, raw_hw_qos_depth_);
+-		pub_imu_ros 		= this->create_publisher<sensor_msgs::msg::Imu>(imu_topic_ros.c_str(), imu_reliable_qos);
++			"IMU QoS: /%s %s keep_last=%d, /imu/raw_hw %s keep_last=%d",
++			imu_topic_ros.c_str(),
++			imu_qos_reliability.c_str(),
++			imu_qos_depth,
++			raw_hw_qos_reliability.c_str(),
++			raw_hw_qos_depth_);
++		RCLCPP_INFO(this->get_logger(),
++			"IMU serial/publish pipeline: decoupled critical_queue_depth=%zu "
++			"ros_imu_queue_depth=%zu legacy_queue_depth=%zu",
++			publish_queue_depth_,
++			ros_imu_publish_queue_depth_,
++			legacy_publish_queue_depth_);
++		pub_imu_ros 		= this->create_publisher<sensor_msgs::msg::Imu>(imu_topic_ros.c_str(), imu_qos);
+ 		pub_pose_geometry 	= this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_geo", 10);		
+ 		pub_marker 			= this->create_publisher<visualization_msgs::msg::Marker>("marker", 10);
+ 
+@@ -190,7 +274,7 @@ class YESENSE_Publisher : public rclcpp::Node
+ 
+ 		// Phase 1A: raw hardware-timed IMU publisher
+ 		if (enable_raw_hw_topic_) {
+-			pub_imu_raw_hw_ = this->create_publisher<yesense_interface::msg::ImuRawHw>("imu/raw_hw", raw_hw_reliable_qos);
++			pub_imu_raw_hw_ = this->create_publisher<yesense_interface::msg::ImuRawHw>("imu/raw_hw", raw_hw_qos);
+ 			RCLCPP_INFO(this->get_logger(), "Phase 1A: /imu/raw_hw publisher enabled\n");
+ 		}
+ 
+@@ -289,12 +373,37 @@ class YESENSE_Publisher : public rclcpp::Node
+ 		RCLCPP_INFO(this->get_logger(), "IMU warm-up: %.1f sec (will not publish until stable)\n", imu_warmup_sec_);
+ 
+ 		// =================================================
+-		timer_ 			= this->create_wall_timer(1ms, std::bind(&YESENSE_Publisher::timer_callback, this));
+-		timer_msg_rate_ = this->create_wall_timer(1ms, std::bind(&YESENSE_Publisher::callback_msg_rate_calc, this));		
++		running_.store(true);
++		serial_thread_ = std::thread(&YESENSE_Publisher::serial_loop, this);
++		publish_thread_ = std::thread(&YESENSE_Publisher::publish_loop, this);
++		ros_imu_publish_thread_ =
++			std::thread(&YESENSE_Publisher::ros_imu_publish_loop, this);
++		legacy_publish_thread_ =
++			std::thread(&YESENSE_Publisher::legacy_publish_loop, this);
++		configure_realtime_thread(serial_thread_, "serial_thread");
++		configure_realtime_thread(publish_thread_, "raw_hw_publish_thread");
++		timer_msg_rate_ = this->create_wall_timer(
++			1s, std::bind(&YESENSE_Publisher::callback_msg_rate_calc, this));
+ 	}
+ 
+ 	~YESENSE_Publisher()
+ 	{
++		running_.store(false);
++		publish_queue_cv_.notify_all();
++		ros_imu_publish_queue_cv_.notify_all();
++		legacy_publish_queue_cv_.notify_all();
++		if (serial_thread_.joinable()) {
++			serial_thread_.join();
++		}
++		if (publish_thread_.joinable()) {
++			publish_thread_.join();
++		}
++		if (ros_imu_publish_thread_.joinable()) {
++			ros_imu_publish_thread_.join();
++		}
++		if (legacy_publish_thread_.joinable()) {
++			legacy_publish_thread_.join();
++		}
+ 		if(serial_drv_ros == driver_type)
+ 		{			
+ 			ser.close();
+@@ -306,33 +415,59 @@ class YESENSE_Publisher : public rclcpp::Node
+ 	}
+ 
+ 	private:
+-	void timer_callback()
++	struct QueuedImuFrame
+ 	{
+-		size_t bytes_read_r_buffer = 0;
++		yis_out_data_t data;
++		std::chrono::steady_clock::time_point host_steady_now;
++	};
+ 
+-		if(serial_drv_ros == driver_type)
+-		{
+-			if(ser.isOpen() &&ser.available()) 
++	struct QueuedLegacyFrame
++	{
++		yis_out_data_t data;
++		sensor_msgs::msg::Imu imu_ros_data;
++	};
++
++	struct QueuedRosImuFrame
++	{
++		yis_out_data_t data;
++		sensor_msgs::msg::Imu imu_ros_data;
++		std::chrono::steady_clock::time_point host_steady_now;
++	};
++
++	void serial_loop()
++	{
++		while (running_.load() && rclcpp::ok()) {
++			size_t bytes_read_r_buffer = 0;
++
++			if(serial_drv_ros == driver_type)
+ 			{
+-			size_t bytes_to_read = std::min(static_cast<size_t>(ser.available()), sizeof(r_buffer));
+-			bytes_read_r_buffer = ser.read(r_buffer, bytes_to_read);
++				if(ser.isOpen() && ser.available())
++				{
++					size_t bytes_to_read = std::min(
++						static_cast<size_t>(ser.available()),
++						sizeof(r_buffer));
++					bytes_read_r_buffer = ser.read(r_buffer, bytes_to_read);
++				}
++			}
++			else if(serial_drv_linux == driver_type)
++			{
++				bytes_read_r_buffer = read(fd, r_buffer, UART_RX_BUF_LEN);
+ 			}
+-		}
+-		else if(serial_drv_linux == driver_type)
+-		{
+-			bytes_read_r_buffer = read(fd, r_buffer, UART_RX_BUF_LEN);
+-		}	
+-		int ret = decoder.data_proc(r_buffer, (unsigned int)bytes_read_r_buffer, &yis_out);
+ 
+-		if(analysis_ok == ret)
+-		{
+-			if(yis_out.content.valid_flg)
++			if (bytes_read_r_buffer == 0) {
++				std::this_thread::sleep_for(500us);
++				continue;
++			}
++
++			int ret = decoder.data_proc(
++				r_buffer, (unsigned int)bytes_read_r_buffer, &yis_out);
++
++			if(analysis_ok == ret && yis_out.content.valid_flg)
+ 			{
+ 				// §4.3 take timestamp IMMEDIATELY after frame confirmed
+ 				auto host_steady_now = std::chrono::steady_clock::now();
+ 
+ 				yis_out.content.valid_flg = 0u;
+-				user_info.msg_cnt++;
+ 
+ 				// §4.4 update IMU pipeline statistics
+ 				update_pipeline_stats(host_steady_now);
+@@ -348,22 +483,159 @@ class YESENSE_Publisher : public rclcpp::Node
+ 							elapsed);
+ 					} else {
+ 						// Still warming up — parse & track but don't publish
+-						return;
++						continue;
+ 					}
+ 				}
+ 
+-				// §4.4 publish pipeline_ready once (方案 B)
+-				if (!pipeline_ready_published_) {
+-					std_msgs::msg::Bool ready_msg;
+-					ready_msg.data = true;
+-					pub_pipeline_ready_->publish(ready_msg);
+-					pipeline_ready_published_ = true;
+-					RCLCPP_INFO(this->get_logger(),
+-						"Published /imu/pipeline_ready = true");
++				enqueue_publish_frame(yis_out, host_steady_now);
++			}
++		}
++	}
++
++	void enqueue_publish_frame(
++		const yis_out_data_t & data,
++		std::chrono::steady_clock::time_point host_steady_now)
++	{
++		{
++			std::lock_guard<std::mutex> lock(publish_queue_mutex_);
++			if (publish_queue_.size() >= publish_queue_depth_) {
++				publish_queue_.pop_front();
++				publish_queue_drop_count_++;
++			}
++			publish_queue_.push_back(QueuedImuFrame{data, host_steady_now});
++		}
++		publish_queue_cv_.notify_one();
++	}
++
++	void publish_loop()
++	{
++		while (running_.load() && rclcpp::ok()) {
++			QueuedImuFrame frame;
++			{
++				std::unique_lock<std::mutex> lock(publish_queue_mutex_);
++				publish_queue_cv_.wait(lock, [this]() {
++					return !running_.load() || !publish_queue_.empty();
++				});
++				if (!running_.load() && publish_queue_.empty()) {
++					break;
++				}
++				frame = publish_queue_.front();
++				publish_queue_.pop_front();
++			}
++
++			// §4.4 publish pipeline_ready once (方案 B)
++			if (!pipeline_ready_published_) {
++				std_msgs::msg::Bool ready_msg;
++				ready_msg.data = true;
++				pub_pipeline_ready_->publish(ready_msg);
++				pipeline_ready_published_ = true;
++				RCLCPP_INFO(this->get_logger(),
++					"Published /imu/pipeline_ready = true");
++			}
++
++			auto imu_ros_data =
++				publish_critical_msg(&frame.data, frame.host_steady_now);
++			enqueue_ros_imu_publish_frame(
++				frame.data, imu_ros_data, frame.host_steady_now);
++			enqueue_legacy_publish_frame(frame.data, imu_ros_data);
++			published_count_.fetch_add(1, std::memory_order_relaxed);
++		}
++	}
++
++	void configure_realtime_thread(std::thread & thread, const char * name)
++	{
++		if (realtime_thread_priority_ <= 0 || !thread.joinable()) {
++			return;
++		}
++		sched_param sched{};
++		sched.sched_priority = realtime_thread_priority_;
++		const int rc = pthread_setschedparam(
++			thread.native_handle(), SCHED_FIFO, &sched);
++		if (rc != 0) {
++			RCLCPP_WARN(this->get_logger(),
++				"Failed to set %s SCHED_FIFO priority=%d: %s",
++				name, realtime_thread_priority_, std::strerror(rc));
++			return;
++		}
++		RCLCPP_INFO(this->get_logger(),
++			"Set %s SCHED_FIFO priority=%d",
++			name, realtime_thread_priority_);
++	}
++
++	void enqueue_ros_imu_publish_frame(
++		const yis_out_data_t & data,
++		const sensor_msgs::msg::Imu & imu_ros_data,
++		std::chrono::steady_clock::time_point host_steady_now)
++	{
++		{
++			std::lock_guard<std::mutex> lock(ros_imu_publish_queue_mutex_);
++			if (ros_imu_publish_queue_.size() >= ros_imu_publish_queue_depth_) {
++				ros_imu_publish_queue_.pop_front();
++				ros_imu_publish_queue_drop_count_++;
++			}
++			ros_imu_publish_queue_.push_back(
++				QueuedRosImuFrame{data, imu_ros_data, host_steady_now});
++		}
++		ros_imu_publish_queue_cv_.notify_one();
++	}
++
++	void ros_imu_publish_loop()
++	{
++		while (running_.load() && rclcpp::ok()) {
++			QueuedRosImuFrame frame;
++			{
++				std::unique_lock<std::mutex> lock(
++					ros_imu_publish_queue_mutex_);
++				ros_imu_publish_queue_cv_.wait(lock, [this]() {
++					return !running_.load() || !ros_imu_publish_queue_.empty();
++				});
++				if (!running_.load() && ros_imu_publish_queue_.empty()) {
++					break;
+ 				}
++				frame = ros_imu_publish_queue_.front();
++				ros_imu_publish_queue_.pop_front();
++			}
++
++			pub_imu_ros->publish(frame.imu_ros_data);
++			debug_total_published_++;
++			write_debug_raw(
++				frame.imu_ros_data, &frame.data, frame.host_steady_now);
++		}
++	}
+ 
+-				publish_msg(&yis_out, host_steady_now);
++	void enqueue_legacy_publish_frame(
++		const yis_out_data_t & data,
++		const sensor_msgs::msg::Imu & imu_ros_data)
++	{
++		{
++			std::lock_guard<std::mutex> lock(legacy_publish_queue_mutex_);
++			if (legacy_publish_queue_.size() >= legacy_publish_queue_depth_) {
++				legacy_publish_queue_.pop_front();
++				legacy_publish_queue_drop_count_++;
+ 			}
++			legacy_publish_queue_.push_back(
++				QueuedLegacyFrame{data, imu_ros_data});
++		}
++		legacy_publish_queue_cv_.notify_one();
++	}
++
++	void legacy_publish_loop()
++	{
++		while (running_.load() && rclcpp::ok()) {
++			QueuedLegacyFrame frame;
++			{
++				std::unique_lock<std::mutex> lock(legacy_publish_queue_mutex_);
++				legacy_publish_queue_cv_.wait(lock, [this]() {
++					return !running_.load() || !legacy_publish_queue_.empty();
++				});
++				if (!running_.load() && legacy_publish_queue_.empty()) {
++					break;
++				}
++				frame = legacy_publish_queue_.front();
++				legacy_publish_queue_.pop_front();
++			}
++
++			publish_legacy_msg(&frame.data, frame.imu_ros_data);
+ 		}
+ 	}
+ 	
+@@ -371,18 +643,18 @@ class YESENSE_Publisher : public rclcpp::Node
+ 		{
+ 			if(user_info.flg)
+ 			{
+-				user_info.timing_cnt++;
+-			if(user_info.timing_cnt >= CNT_PER_SECOND)
+-			{
+-					user_info.timing_cnt 	= 0u;
+-					user_info.msg_rate	= user_info.msg_cnt;
+-					user_info.msg_cnt		= 0u;
+-					write_debug_summary();
+-				}
++				user_info.msg_rate = published_count_.exchange(
++					0, std::memory_order_relaxed);
++				write_debug_summary();
+ 			}
+ 		}
+ 
+-		void publish_msg(yis_out_data_t *result, std::chrono::steady_clock::time_point host_steady_now);
++		sensor_msgs::msg::Imu publish_critical_msg(
++			const yis_out_data_t *result,
++			std::chrono::steady_clock::time_point host_steady_now);
++		void publish_legacy_msg(
++			const yis_out_data_t *result,
++			const sensor_msgs::msg::Imu & imu_ros_data);
+ 
+ 		void init_debug_output(double imu_output_rate)
+ 		{
+@@ -400,7 +672,7 @@ class YESENSE_Publisher : public rclcpp::Node
+ 			const yis_out_data_t *result,
+ 			std::chrono::steady_clock::time_point host_steady_now)
+ 		{
+-			if (!debug_enable_) return;
++			if (!debug_enable_ || !debug_trace_samples_) return;
+ 			const auto steady_ns =
+ 				std::chrono::duration_cast<std::chrono::nanoseconds>(
+ 					host_steady_now.time_since_epoch()).count();
+@@ -428,21 +700,75 @@ class YESENSE_Publisher : public rclcpp::Node
+ 			const auto steady_ns =
+ 				std::chrono::duration_cast<std::chrono::nanoseconds>(
+ 					std::chrono::steady_clock::now().time_since_epoch()).count();
++			size_t queue_depth = 0;
++			size_t ros_imu_queue_depth = 0;
++			size_t legacy_queue_depth = 0;
++			uint64_t queue_drops = 0;
++			uint64_t ros_imu_queue_drops = 0;
++			uint64_t legacy_queue_drops = 0;
++			{
++				std::lock_guard<std::mutex> queue_lock(publish_queue_mutex_);
++				queue_depth = publish_queue_.size();
++				queue_drops = publish_queue_drop_count_;
++			}
++			{
++				std::lock_guard<std::mutex> queue_lock(
++					ros_imu_publish_queue_mutex_);
++				ros_imu_queue_depth = ros_imu_publish_queue_.size();
++				ros_imu_queue_drops = ros_imu_publish_queue_drop_count_;
++			}
++			{
++				std::lock_guard<std::mutex> queue_lock(
++					legacy_publish_queue_mutex_);
++				legacy_queue_depth = legacy_publish_queue_.size();
++				legacy_queue_drops = legacy_publish_queue_drop_count_;
++			}
+ 			std::lock_guard<std::mutex> lock(debug_mutex_);
+ 			RCLCPP_INFO(this->get_logger(),
+ 			            "[yesense_summary] steady_ns=%ld msg_rate_hz=%u "
+-			            "total_published=%lu debug_expected_imu_rate_hz=%.3f",
+-			            steady_ns, user_info.msg_rate, debug_total_published_,
++			            "total_published=%lu publish_queue_depth=%zu "
++			            "publish_queue_drops=%lu ros_imu_queue_depth=%zu "
++			            "ros_imu_queue_drops=%lu legacy_queue_depth=%zu "
++			            "legacy_queue_drops=%lu "
++			            "debug_expected_imu_rate_hz=%.3f",
++			            steady_ns, user_info.msg_rate,
++			            debug_total_published_.load(std::memory_order_relaxed),
++			            queue_depth, queue_drops,
++			            ros_imu_queue_depth, ros_imu_queue_drops,
++			            legacy_queue_depth, legacy_queue_drops,
+ 			            debug_expected_imu_rate_hz_);
+ 		}
+ 
+-		rclcpp::TimerBase::SharedPtr timer_;
+ 			rclcpp::TimerBase::SharedPtr timer_msg_rate_;
+ 
+ 			bool debug_enable_ = false;
++			bool debug_trace_samples_ = false;
+ 			double debug_expected_imu_rate_hz_ = 0.0;
+ 			std::mutex debug_mutex_;
+-		uint64_t debug_total_published_ = 0;
++		std::atomic<uint64_t> debug_total_published_{0};
++
++		std::atomic_bool running_{false};
++		std::thread serial_thread_;
++		std::thread publish_thread_;
++		std::thread ros_imu_publish_thread_;
++		std::thread legacy_publish_thread_;
++		std::mutex publish_queue_mutex_;
++		std::condition_variable publish_queue_cv_;
++		std::deque<QueuedImuFrame> publish_queue_;
++		size_t publish_queue_depth_ = 4000;
++		uint64_t publish_queue_drop_count_ = 0;
++		std::mutex ros_imu_publish_queue_mutex_;
++		std::condition_variable ros_imu_publish_queue_cv_;
++		std::deque<QueuedRosImuFrame> ros_imu_publish_queue_;
++		size_t ros_imu_publish_queue_depth_ = 4000;
++		uint64_t ros_imu_publish_queue_drop_count_ = 0;
++		std::mutex legacy_publish_queue_mutex_;
++		std::condition_variable legacy_publish_queue_cv_;
++		std::deque<QueuedLegacyFrame> legacy_publish_queue_;
++		size_t legacy_publish_queue_depth_ = 4000;
++		uint64_t legacy_publish_queue_drop_count_ = 0;
++		std::atomic_uint published_count_{0};
++		int realtime_thread_priority_ = 0;
+ 
+ 		// serial
+ 	unsigned char r_buffer[UART_RX_BUF_LEN];
+@@ -554,23 +880,11 @@ class YESENSE_Publisher : public rclcpp::Node
+ 	yesense_decoder decoder;
+ };
+ 
+-void YESENSE_Publisher::publish_msg(yis_out_data_t *result, std::chrono::steady_clock::time_point host_steady_now)
++sensor_msgs::msg::Imu YESENSE_Publisher::publish_critical_msg(
++	const yis_out_data_t *result,
++	std::chrono::steady_clock::time_point host_steady_now)
+ {
+ 	sensor_msgs::msg::Imu					imu_ros_data;
+-   	geometry_msgs::msg::PoseStamped 		pose_data;	
+-	visualization_msgs::msg::Marker			marker_info;
+-
+-	yesense_interface::msg::ImuData 		imu_data;
+-	yesense_interface::msg::ImuDataTenAxis 	sensor_data_10axis;
+-	yesense_interface::msg::EulerOnly		euler_data;
+-	yesense_interface::msg::RobotLord		robot_data;
+-	yesense_interface::msg::AttitudeMinVru	att_min_vru_data;
+-	yesense_interface::msg::AttitudeMinAhrs	att_min_ahrs_data;
+-	yesense_interface::msg::AttitudeAllData	att_all_data;
+-	yesense_interface::msg::PosOnly			pos_data;
+-	yesense_interface::msg::NavMin			nav_min_data;
+-	yesense_interface::msg::NavMinUtc		nav_min_utc_data;
+-	yesense_interface::msg::NavAll			nav_all_data;
+ 
+     // =========== publish imu message ==============
+     // Closed-loop timestamp reconstruction from hardware counters.
+@@ -643,10 +957,6 @@ void YESENSE_Publisher::publish_msg(yis_out_data_t *result, std::chrono::steady_
+ 	    imu_ros_data.linear_acceleration.x = result->acc.x;
+ 	    imu_ros_data.linear_acceleration.y = result->acc.y;
+ 	    imu_ros_data.linear_acceleration.z = result->acc.z;
+-	    pub_imu_ros->publish(imu_ros_data); //tues
+-	    debug_total_published_++;
+-	    write_debug_raw(imu_ros_data, result, host_steady_now);
+-
+ 	    // ── Phase 1A: publish ImuRawHw with host-side steady/ROS time ──
+     if (pub_imu_raw_hw_ && enable_raw_hw_topic_) {
+         yesense_interface::msg::ImuRawHw raw_hw;
+@@ -681,6 +991,28 @@ void YESENSE_Publisher::publish_msg(yis_out_data_t *result, std::chrono::steady_
+         pub_imu_raw_hw_->publish(raw_hw);
+     }
+ 
++	return imu_ros_data;
++}
++
++void YESENSE_Publisher::publish_legacy_msg(
++	const yis_out_data_t *result,
++	const sensor_msgs::msg::Imu & imu_ros_data)
++{
++	geometry_msgs::msg::PoseStamped 		pose_data;
++	visualization_msgs::msg::Marker			marker_info;
++
++	yesense_interface::msg::ImuData 		imu_data;
++	yesense_interface::msg::ImuDataTenAxis 	sensor_data_10axis;
++	yesense_interface::msg::EulerOnly		euler_data;
++	yesense_interface::msg::RobotLord		robot_data;
++	yesense_interface::msg::AttitudeMinVru	att_min_vru_data;
++	yesense_interface::msg::AttitudeMinAhrs	att_min_ahrs_data;
++	yesense_interface::msg::AttitudeAllData	att_all_data;
++	yesense_interface::msg::PosOnly			pos_data;
++	yesense_interface::msg::NavMin			nav_min_data;
++	yesense_interface::msg::NavMinUtc		nav_min_utc_data;
++	yesense_interface::msg::NavAll			nav_all_data;
++
+   	// ================ update pose =================
+     pose_data.header.frame_id 	= frame_id;
+     pose_data.header.stamp		= imu_ros_data.header.stamp;
+-- 
+2.55.0
+

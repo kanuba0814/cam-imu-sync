@@ -1,0 +1,5 @@
+target_type: "aprilgrid"
+tagCols: 6
+tagRows: 6
+tagSize: 0.03186 # 黑色方块边长，单位：米（31.86mm）
+tagSpacing: 0.2960 # 9.43 / 31.86

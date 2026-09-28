@@ -1,0 +1,121 @@
+From a37101014278dda603158c9a19dc0029a03fa0d6 Mon Sep 17 00:00:00 2001
+From: kanuba0814 <gaixiaxianl@icloud.com>
+Date: Wed, 13 May 2026 18:43:19 +0900
+Subject: [PATCH 5/6] fix(yesense): make raw imu qos tolerant to sync load
+
+---
+ yesense_std_ros2/config/yesense_config.yaml   |  2 ++
+ .../launch/yesense_node.launch.py             |  5 +++
+ yesense_std_ros2/src/yesense_node.cpp         | 33 +++++++++++++++++--
+ 3 files changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/yesense_std_ros2/config/yesense_config.yaml b/yesense_std_ros2/config/yesense_config.yaml
+index b55690f..b2202a7 100644
+--- a/yesense_std_ros2/config/yesense_config.yaml
++++ b/yesense_std_ros2/config/yesense_config.yaml
+@@ -10,5 +10,7 @@ yesense_pub:
+         hw_ts_unit_us: 1.0       # sample_timestamp unit (1=μs, 100=100μs)
+         imu_warmup_sec: 0.8      # §4.2 suppress publishing for first N seconds
+         enable_raw_hw_topic: true # Phase 1A: publish /imu/raw_hw with steady timestamps
++        imu_qos_depth: 1000       # RELIABLE keep-last depth for /imu/data_raw
++        raw_hw_qos_depth: 1000    # RELIABLE keep-last depth for /imu/raw_hw
+         debug_enable: false
+         debug_expected_imu_rate_hz: 0.0
+diff --git a/yesense_std_ros2/launch/yesense_node.launch.py b/yesense_std_ros2/launch/yesense_node.launch.py
+index d295c10..c866b30 100644
+--- a/yesense_std_ros2/launch/yesense_node.launch.py
++++ b/yesense_std_ros2/launch/yesense_node.launch.py
+@@ -15,6 +15,8 @@ def generate_launch_description():
+     return LaunchDescription([
+         DeclareLaunchArgument('debug_enable', default_value='false'),
+         DeclareLaunchArgument('debug_expected_imu_rate_hz', default_value='0.0'),
++        DeclareLaunchArgument('imu_qos_depth', default_value='1000'),
++        DeclareLaunchArgument('raw_hw_qos_depth', default_value='1000'),
+          Node(
+             package='yesense_std_ros2',
+             executable='yesense_node_publisher',
+@@ -23,6 +25,9 @@ def generate_launch_description():
+                 'debug_enable': LaunchConfiguration('debug_enable'),
+                 'debug_expected_imu_rate_hz':
+                     LaunchConfiguration('debug_expected_imu_rate_hz'),
++                'imu_qos_depth': LaunchConfiguration('imu_qos_depth'),
++                'raw_hw_qos_depth':
++                    LaunchConfiguration('raw_hw_qos_depth'),
+             }],
+             output='screen',
+             ),
+diff --git a/yesense_std_ros2/src/yesense_node.cpp b/yesense_std_ros2/src/yesense_node.cpp
+index 3c0776f..41c677b 100644
+--- a/yesense_std_ros2/src/yesense_node.cpp
++++ b/yesense_std_ros2/src/yesense_node.cpp
+@@ -127,6 +127,8 @@ class YESENSE_Publisher : public rclcpp::Node
+ 		this->declare_parameter<double>("imu_output_rate", 200.0); // IMU output rate in Hz (for tid fallback)
+ 		this->declare_parameter<double>("imu_warmup_sec", 0.8);   // §4.2 warm-up: suppress publishing for first N seconds
+ 			this->declare_parameter<bool>("enable_raw_hw_topic", true); // Phase 1A: publish /imu/raw_hw
++			this->declare_parameter<int>("imu_qos_depth", 1000);
++			this->declare_parameter<int>("raw_hw_qos_depth", 1000);
+ 			this->declare_parameter<bool>("debug_enable", false);
+ 			this->declare_parameter<double>("debug_expected_imu_rate_hz", 0.0);
+ 		//this->declare_parameter<std::string>("driver_type", "linux_serial");
+@@ -146,6 +148,21 @@ class YESENSE_Publisher : public rclcpp::Node
+ 		tid_interval_sec_ = 1.0 / imu_output_rate;
+ 			this->get_parameter("imu_warmup_sec", imu_warmup_sec_);
+ 			this->get_parameter("enable_raw_hw_topic", enable_raw_hw_topic_);
++			this->get_parameter("raw_hw_qos_depth", raw_hw_qos_depth_);
++			int imu_qos_depth = 1000;
++			this->get_parameter("imu_qos_depth", imu_qos_depth);
++			if (raw_hw_qos_depth_ < 1) {
++				RCLCPP_WARN(this->get_logger(),
++					"raw_hw_qos_depth=%d is invalid; using 1",
++					raw_hw_qos_depth_);
++				raw_hw_qos_depth_ = 1;
++			}
++			if (imu_qos_depth < 1) {
++				RCLCPP_WARN(this->get_logger(),
++					"imu_qos_depth=%d is invalid; using 1",
++					imu_qos_depth);
++				imu_qos_depth = 1;
++			}
+ 			this->get_parameter("debug_enable", debug_enable_);
+ 			this->get_parameter("debug_expected_imu_rate_hz", debug_expected_imu_rate_hz_);
+ 			init_debug_output(imu_output_rate);
+@@ -153,7 +170,18 @@ class YESENSE_Publisher : public rclcpp::Node
+ 		RCLCPP_INFO(this->get_logger(), "baudrate %d\n", baud_rate);
+ 		RCLCPP_INFO(this->get_logger(), "frame id %s\n", frame_id.c_str());
+ 		RCLCPP_INFO(this->get_logger(), "driver type %s\n", driver_type_str.c_str());
+-		pub_imu_ros 		= this->create_publisher<sensor_msgs::msg::Imu>(imu_topic_ros.c_str(), 10);				
++		auto imu_reliable_qos = rclcpp::QoS(
++			rclcpp::KeepLast(static_cast<size_t>(imu_qos_depth)));
++		imu_reliable_qos.reliable();
++		imu_reliable_qos.durability_volatile();
++		auto raw_hw_reliable_qos = rclcpp::QoS(
++			rclcpp::KeepLast(static_cast<size_t>(raw_hw_qos_depth_)));
++		raw_hw_reliable_qos.reliable();
++		raw_hw_reliable_qos.durability_volatile();
++		RCLCPP_INFO(this->get_logger(),
++			"IMU QoS: /%s RELIABLE keep_last=%d, /imu/raw_hw RELIABLE keep_last=%d",
++			imu_topic_ros.c_str(), imu_qos_depth, raw_hw_qos_depth_);
++		pub_imu_ros 		= this->create_publisher<sensor_msgs::msg::Imu>(imu_topic_ros.c_str(), imu_reliable_qos);
+ 		pub_pose_geometry 	= this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_geo", 10);		
+ 		pub_marker 			= this->create_publisher<visualization_msgs::msg::Marker>("marker", 10);
+ 
+@@ -162,7 +190,7 @@ class YESENSE_Publisher : public rclcpp::Node
+ 
+ 		// Phase 1A: raw hardware-timed IMU publisher
+ 		if (enable_raw_hw_topic_) {
+-			pub_imu_raw_hw_ = this->create_publisher<yesense_interface::msg::ImuRawHw>("imu/raw_hw", 10);
++			pub_imu_raw_hw_ = this->create_publisher<yesense_interface::msg::ImuRawHw>("imu/raw_hw", raw_hw_reliable_qos);
+ 			RCLCPP_INFO(this->get_logger(), "Phase 1A: /imu/raw_hw publisher enabled\n");
+ 		}
+ 
+@@ -508,6 +536,7 @@ class YESENSE_Publisher : public rclcpp::Node
+ 	// Phase 1A: raw hardware-timed IMU publisher
+ 	rclcpp::Publisher<yesense_interface::msg::ImuRawHw>::SharedPtr pub_imu_raw_hw_;
+ 	bool enable_raw_hw_topic_ = true;
++	int raw_hw_qos_depth_ = 1000;
+ 
+ 	// yesense self-defined topic
+ 	rclcpp::Publisher<yesense_interface::msg::ImuData>::SharedPtr pub_imu;							// only inertia data: tid/acc/gyro/sensor_temp/sample_timestamp
+-- 
+2.55.0
+

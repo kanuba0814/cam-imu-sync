@@ -1,0 +1,77 @@
+Calibration results
+===================
+Normalized Residuals
+----------------------------
+Reprojection error (cam0):     mean 0.709519259463, median 0.488243898167, std: 0.669612145806
+Gyroscope error (imu0):        mean 0.764480612215, median 0.515554765711, std: 0.816138057257
+Accelerometer error (imu0):    mean 0.927387784646, median 0.615047541289, std: 1.26781172465
+
+Residuals
+----------------------------
+Reprojection error (cam0) [px]:     mean 0.709519259463, median 0.488243898167, std: 0.669612145806
+Gyroscope error (imu0) [rad/s]:     mean 0.00943466628811, median 0.0063626036946, std: 0.0100721850786
+Accelerometer error (imu0) [m/s^2]: mean 0.0771700946737, median 0.0511795365174, std: 0.105497562551
+
+Transformation (cam0):
+-----------------------
+T_ci:  (imu0 to cam0): 
+[[-0.01149136 -0.99991571  0.0060429  -0.00418167]
+ [-0.99971702  0.01136278 -0.02089878  0.00767488]
+ [ 0.02082836 -0.00628134 -0.99976333 -0.06515195]
+ [ 0.          0.          0.          1.        ]]
+
+T_ic:  (cam0 to imu0): 
+[[-0.01149136 -0.99971702  0.02082836  0.00898166]
+ [-0.99991571  0.01136278 -0.00628134 -0.00467776]
+ [ 0.0060429  -0.02089878 -0.99976333 -0.06495086]
+ [ 0.          0.          0.          1.        ]]
+
+timeshift cam0 to imu0: [s] (t_imu = t_cam + shift)
+0.2367828688
+
+
+Gravity vector in target coords: [m/s^2]
+[-0.10520728 -9.74580565 -1.0847242 ]
+
+
+Calibration configuration
+=========================
+
+cam0
+-----
+  Camera model: pinhole
+  Focal length: [545.4318275957406, 544.808949128241]
+  Principal point: [343.5108408742363, 226.5228051124848]
+  Distortion model: equidistant
+  Distortion coefficients: [-0.06683718148822111, -0.009650209768810673, -0.029825075641508617, 0.020281540657900984]
+  Type: aprilgrid
+  Tags: 
+    Rows: 6
+    Cols: 6
+    Size: 0.03186 [m]
+    Spacing 0.00943056 [m]
+
+
+
+IMU configuration
+=================
+
+IMU0:
+----------------------------
+  Model: calibrated
+  Update rate: 200.0
+  Accelerometer:
+    Noise density: 0.005884 
+    Noise density (discrete): 0.08321232601 
+    Random walk: 0.0034323
+  Gyroscope:
+    Noise density: 0.00087266
+    Noise density (discrete): 0.0123412760734 
+    Random walk: 0.00019393
+  T_i_b
+    [[ 1.  0.  0.  0.]
+     [ 0.  1.  0.  0.]
+     [ 0.  0.  1.  0.]
+     [ 0.  0.  0.  1.]]
+  time offset with respect to IMU0: 0.0 [s]
+
